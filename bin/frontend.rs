@@ -8,33 +8,36 @@
 #![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
 extern crate rocket;
-
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::thread;
+extern crate google_signin;
 
 use rocket::request::Form;
 use rocket::response::status::{Accepted, NotFound};
-use rocket::response::NamedFile;
+use rocket::response::{NamedFile, Redirect};
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
+use std::error::Error;
+use std::path::{Path, PathBuf};
+use std::process;
+use std::time::SystemTime;
 
 use cortex::backend::Backend;
-use cortex::frontend::cached::cache_worker;
+use cortex::concerns::CortexInsertable;
 use cortex::frontend::concerns::{
   serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
 };
 use cortex::frontend::cors::CORS;
 use cortex::frontend::helpers::*;
-use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
-use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
-use cortex::sysinfo;
+use cortex::frontend::params::{AuthParams, ReportParams, RerunRequestParams, TemplateContext};
+use cortex::models::{
+  Corpus, HistoricalRun, NewCorpus, NewUser, RunMetadata, RunMetadataStack, Service,
+  User,
+};
 
 #[get("/")]
 fn root() -> Template {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert(
     "title".to_string(),
     "Overview of available Corpora".to_string(),
@@ -58,24 +61,112 @@ fn root() -> Template {
   Template::render("overview", context)
 }
 
-#[get("/admin")]
-fn admin() -> Template {
-  let mut global = HashMap::new();
+#[get("/dashboard?<params..>")]
+fn admin_dashboard(params: Form<AuthParams>) -> Result<Template, Redirect> {
+  // Recommended: Let the crate handle everything for you
+  let mut current_user = None;
+  let id_info = match verify_oauth(&params.token) {
+    None => return Err(Redirect::to("/")),
+    Some(id_info) => id_info,
+  };
+  let display = if let Some(ref name) = id_info.name {
+    name.to_owned()
+  } else {
+    String::new()
+  };
+  let email = id_info.email.unwrap();
+  // TODO: If we ever have too many users, this will be too slow. For now, simple enough.
+  let backend = Backend::default();
+  let users = backend.users();
+  let message = if users.is_empty() {
+    let first_admin = NewUser {
+      admin: true,
+      email: email.to_owned(),
+      display,
+      first_seen: SystemTime::now(),
+      last_seen: SystemTime::now(),
+    };
+    if backend.add(&first_admin).is_ok() {
+      format!("Registered admin user for {:?}", email)
+    } else {
+      format!("Failed to create user for {:?}", email)
+    }
+  } else {
+    // is this user known?
+    if let Ok(u) = User::find_by_email(&email, &backend.connection) {
+      let is_admin = if u.admin { "(admin)" } else { "" };
+      current_user = Some(u);
+      format!("Signed in as {:?} {}", email, is_admin)
+    } else {
+      let new_viewer = NewUser {
+        admin: false,
+        email: email.to_owned(),
+        display,
+        first_seen: SystemTime::now(),
+        last_seen: SystemTime::now(),
+      };
+      if backend.add(&new_viewer).is_ok() {
+        format!("Registered viewer-level user for {:?}", email)
+      } else {
+        format!("Failed to create user for {:?}", email)
+      }
+    }
+  };
+  if current_user.is_none() {
+    // did we end up registering a new user? If so, look it up
+    if let Ok(u) = User::find_by_email(&email, &backend.connection) {
+      current_user = Some(u);
+    }
+  }
+  // having a registered user, mark as seen
+  if let Some(ref u) = current_user {
+    u.touch(&backend.connection).expect("DB ran away");
+  }
+  let mut global = global_defaults();
+  global.insert("message".to_string(), message);
   global.insert("title".to_string(), "Admin Interface".to_string());
   global.insert(
     "description".to_string(),
     "An analysis framework for corpora of TeX/LaTeX documents - admin interface.".to_string(),
   );
-  match sysinfo::report(&mut global) {
-    Ok(_) => {},
-    Err(e) => println!("Sys report failed: {:?}", e),
-  };
+  Ok(Template::render(
+    "admin",
+    dashboard_context(backend, current_user, global),
+  ))
+}
 
-  let context = TemplateContext {
-    global,
-    ..TemplateContext::default()
+#[post(
+  "/dashboard_task/add_corpus?<params..>",
+  format = "application/json",
+  data = "<corpus_spec>"
+)]
+fn dashboard_task_add_corpus(
+  params: Form<AuthParams>,
+  corpus_spec: Json<NewCorpus>,
+) -> Result<Accepted<String>, NotFound<String>>
+{
+  println!("who: {:?}", params);
+  let id_info = match verify_oauth(&params.token) {
+    None => return Err(NotFound("could not verify OAuth login".to_owned())),
+    Some(id_info) => id_info,
   };
-  Template::render("admin", context)
+  let backend = Backend::default();
+  let user = match User::find_by_email(id_info.email.as_ref().unwrap(), &backend.connection) {
+    Ok(u) => u,
+    _ => return Err(NotFound("no registered user for your email".to_owned())),
+  };
+  if user.admin {
+    println!("dashboard task data: {:?}", corpus_spec);
+    let message = match corpus_spec.create(&backend.connection) {
+      Ok(_) => "successfully added corpus to DB",
+      Err(_) => "failed to create corpus in DB",
+    };
+    Ok(Accepted(Some(message.to_owned())))
+  } else {
+    Err(NotFound(
+      "User must be admin to execute dashboard actions".to_owned(),
+    ))
+  }
 }
 
 #[get("/workers/<service_name>")]
@@ -83,7 +174,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
   let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
   if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
-    let mut global = HashMap::new();
+    let mut global = global_defaults();
     global.insert(
       "title".to_string(),
       format!("Worker report for service {} ", &service_name),
@@ -95,16 +186,19 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
         &service_name
       ),
     );
+    global.insert("corpus_name".to_string(), "all".to_string());
     global.insert("service_name".to_string(), service_name.to_string());
     global.insert(
       "service_description".to_string(),
       service.description.clone(),
     );
+    // uri links lead to root, since this is a global overview
+    global.insert("corpus_name_uri".to_string(), "../".to_string());
+    global.insert("service_name_uri".to_string(), "../".to_string());
     let mut context = TemplateContext {
       global,
       ..TemplateContext::default()
     };
-
     let workers = service
       .select_workers(&backend.connection)
       .unwrap()
@@ -124,7 +218,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
-    let mut global = HashMap::new();
+    let mut global = global_defaults();
     global.insert(
       "title".to_string(),
       "Registered services for ".to_string() + &corpus_name,
@@ -280,7 +374,7 @@ fn historical_runs(
 ) -> Result<Template, NotFound<String>>
 {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
   let corpus_name = corpus_name.to_lowercase();
   if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
@@ -349,7 +443,7 @@ fn entry_fetch(
 #[get("/expire_captcha")]
 fn expire_captcha() -> Result<Template, NotFound<String>> {
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   global.insert(
     "description".to_string(),
     "Expire captcha cache for CorTeX.".to_string(),
@@ -459,7 +553,8 @@ fn rocket() -> rocket::Rocket {
       "/",
       routes![
         root,
-        admin,
+        admin_dashboard,
+        dashboard_task_add_corpus,
         corpus,
         favicon,
         robots,
@@ -486,10 +581,41 @@ fn rocket() -> rocket::Rocket {
     .attach(CORS())
 }
 
-fn main() {
-  // cache worker in parallel to the main service thread
-  let _ = thread::spawn(move || {
-    cache_worker();
-  });
-  rocket().launch();
+fn main() -> Result<(), Box<dyn Error>> {
+  let backend = Backend::default();
+  // Ensure all cortex daemon services are running in parallel before we sping up the frontend
+  // Redis cache expiration logic, for report pages
+  let cw_opt = backend
+    .ensure_daemon("cache_worker")
+    .expect("Couldn't spin up cache worker");
+  // Corpus registration init worker, should run on the machine storing the data (currently same as frontend machine)
+  let initw_opt = backend
+    .ensure_daemon("init_worker")
+    .expect("Couldn't spin up init worker");
+
+  // Dispatcher manager, for service execution logic
+  let dispatcher_opt = backend
+    .ensure_daemon("dispatcher")
+    .expect("Couldn't spin up dispatcher");
+  backend
+    .override_daemon_record("frontend".to_owned(), process::id())
+    .expect("Could not register the process id with the backend, aborting...");
+
+  // Finally, start up the web service
+  let rocket_error = rocket().launch();
+  // If we failed to boot / exited dirty, destroy the children
+  if let Some(mut cw) = cw_opt {
+    cw.kill()?;
+    cw.wait()?;
+  }
+  if let Some(mut iw) = initw_opt {
+    iw.kill()?;
+    iw.wait()?;
+  }
+  if let Some(mut dispatcher) = dispatcher_opt {
+    dispatcher.kill()?;
+    dispatcher.wait()?;
+  }
+  drop(rocket_error);
+  Ok(())
 }

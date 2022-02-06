@@ -1,0 +1,83 @@
+<form action="/dashboard_task/add_corpus" method="post" class="form-outline">
+  <fieldset>
+    <legend>Add Corpus</legend>
+    <div class="form-group row">
+      <div class="col-1">
+        <label for="corpus_path_input">Path </label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="path" id="corpus_path_input" placeholder="/path/to/corpus/">
+        {{ macros::footnote(content="We can not use the file picker widget as it is a security vulnerability to provide path information through the browser. Please provide it by hand for now.") }}
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1">
+        <label for="corpus_name_input">Name</label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="name" id="corpus_name_input" placeholder="My Corpus">
+        {{ macros::footnote(content="A human-readable name for displaying the corpus in the browser") }}
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1">
+        <label for="corpus_description_input">Description</label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="description" id="corpus_description_input"
+          placeholder="A collection of documents for ...">
+        {{ macros::footnote(content="A human-readable description for displaying the corpus in the browser") }}
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1">
+        <label for="corpus_import_extension_input">Import Extension</label>
+      </div>
+      <div class="col-10">
+        <input type="text" name="import_extension" id="corpus_import_extension_input" placeholder="zip">
+        {{ macros::footnote(content="If unsure leave this empty. The regular simple import uses 'tex' as an extension, and all multi-file corpora (such as arXiv), use 'zip' - the default.") }}
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1"></div>
+      <div class="col-10">
+        <select id="corpus_setup" name="complex">
+          <label for="complex">Document setup</label>
+          <option value="">Choose...</option>
+          <optgroup label="document setup">
+            <option value="false">CorTeX Canonical</option>
+            <option value="true">arXiv sources</option>
+          </optgroup>
+        </select>
+      </div>
+    </div>
+    <div class="form-group row">
+      <div class="col-1"></div>
+      <div class="col-10">
+        <button type="submit" class="btn btn-primary mb-2">Add Corpus</button>
+      </div>
+    </div>
+  </fieldset>
+</form>
+
+<table class="table table-striped table-bordered table-hover table-sm">
+  <caption>Registered Corpora</caption>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Path</th>
+      <th>File Extension</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for corpus in corpora %}
+    <tr>
+      <td>{{ corpus.name }}</td>
+      <td>{{ corpus.path }}</td>
+      <td>{{ corpus.import_extension }}</td>
+      <td>{{ corpus.description }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
