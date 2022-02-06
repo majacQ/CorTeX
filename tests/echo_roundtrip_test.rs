@@ -35,6 +35,7 @@ fn mock_round_trip() {
     path: "tests/data/".to_string(),
     complex: true,
     description: String::new(),
+    import_extension: "zip".to_owned(),
   });
   assert!(add_corpus_result.is_ok());
   let corpus_result = Corpus::find_by_name(corpus_name, &test_backend.connection);
@@ -79,7 +80,7 @@ fn mock_round_trip() {
   assert!(import_task_result.is_ok());
 
   let add_echo_task_result = test_backend.add(&NewTask {
-    entry: abs_entry.clone(),
+    entry: abs_entry,
     service_id: echo_service.id,
     corpus_id: mock_corpus.id,
     status: TaskStatus::TODO.raw(),

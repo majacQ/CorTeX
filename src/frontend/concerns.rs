@@ -7,12 +7,10 @@ use rocket::response::NamedFile;
 use rocket::Data;
 use rocket_contrib::json::Json;
 use rocket_contrib::templates::Template;
-use std::collections::HashMap;
 use std::str;
 
-use crate::backend::Backend;
-use crate::backend::RerunOptions;
-use crate::frontend::cached::task_report;
+use crate::backend::cached_task_report;
+use crate::backend::{Backend, RerunOptions};
 use crate::frontend::captcha::{check_captcha, safe_data_to_string};
 use crate::frontend::helpers::*;
 use crate::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
@@ -36,7 +34,7 @@ pub fn serve_report(
 {
   let report_start = time::get_time();
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
 
   let corpus_name = corpus_name.to_lowercase();
@@ -116,7 +114,7 @@ pub fn serve_report(
           severity_highlight(&severity.clone().unwrap()).to_string(),
         );
         template = if severity.is_some() && (severity.as_ref().unwrap() == "no_problem") {
-          let entries = task_report(
+          let entries = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -130,7 +128,7 @@ pub fn serve_report(
           // And set the task list template
           "task-list-report"
         } else {
-          let categories = task_report(
+          let categories = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -153,7 +151,7 @@ pub fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         if category.is_some() && (category.as_ref().unwrap() == "no_messages") {
-          let entries = task_report(
+          let entries = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -167,7 +165,7 @@ pub fn serve_report(
           // And set the task list template
           template = "task-list-report";
         } else {
-          let whats = task_report(
+          let whats = cached_task_report(
             &mut global,
             &corpus,
             &service,
@@ -190,7 +188,7 @@ pub fn serve_report(
         );
         global.insert("category".to_string(), category.clone().unwrap());
         global.insert("what".to_string(), what.clone().unwrap());
-        let entries = task_report(
+        let entries = cached_task_report(
           &mut global,
           &corpus,
           &service,
@@ -307,7 +305,6 @@ pub fn serve_entry(
   // Any secrets reside in config.json
   let cortex_config = load_config();
   let data = safe_data_to_string(data).unwrap_or_default(); // reuse old code by setting data to the String
-  println!("data 1: {:?}", data);
   let g_recaptcha_response_string = if data.len() > 21 {
     let data = &data[21..];
     data.replace("&g-recaptcha-response=", "")
@@ -318,9 +315,9 @@ pub fn serve_entry(
   // Check if we hve the g_recaptcha_response in Redis, then reuse
   let mut redis_opt;
   let quota: usize = match redis::Client::open("redis://127.0.0.1/") {
-    Err(_) => return Err(NotFound(format!("redis unreachable"))),
+    Err(_) => return Err(NotFound("redis unreachable".to_string())),
     Ok(redis_client) => match redis_client.get_connection() {
-      Err(_) => return Err(NotFound(format!("redis unreachable"))),
+      Err(_) => return Err(NotFound("redis unreachable".to_string())),
       Ok(mut redis_connection) => {
         let quota = redis_connection.get(g_recaptcha_response).unwrap_or(0);
         redis_opt = Some(redis_connection);
@@ -399,7 +396,7 @@ pub fn serve_entry_preview(
   let report_start = time::get_time();
   let corpus_name = corpus_name.to_lowercase();
   let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
+  let mut global = global_defaults();
   let backend = Backend::default();
 
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);

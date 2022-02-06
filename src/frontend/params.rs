@@ -1,5 +1,7 @@
 //! Various parameter data structures for the Rocket frontend routes
-use crate::models::RunMetadata;
+use crate::models::{
+  Corpus, DaemonProcess, RunMetadata, Service, User, UserAction, UserPermission,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -12,6 +14,13 @@ pub struct ReportParams {
   pub offset: Option<i64>,
   /// page size for paging in SQL
   pub page_size: Option<i64>,
+}
+
+#[derive(Debug, FromForm)]
+/// Configuration parameters for the frontend admin dashboard
+pub struct AuthParams {
+  /// mandatory authentication token via oauth
+  pub token: String,
 }
 
 /// Configuration in URL query parameter for rerun requests
@@ -66,6 +75,44 @@ impl Default for TemplateContext {
       workers: None,
       history: None,
       history_serialized: None,
+    }
+  }
+}
+
+/// A backend-retrieved report for the admin dashboard
+#[derive(Serialize)]
+pub struct DashboardContext {
+  /// global data, as per Rocket examples
+  pub global: HashMap<String, String>,
+  /// current viewer of the dashboard
+  pub current_user: User,
+  /// admin-oriented view over the DB data
+  pub users: Vec<User>,
+  /// admin-oriented view over the DB data
+  pub user_permissions: Vec<UserPermission>,
+  /// admin-oriented view over the DB data
+  pub user_actions: Vec<UserAction>,
+  /// admin-oriented view over the DB data
+  pub daemons: Vec<DaemonProcess>,
+  /// admin-oriented view over the DB data
+  pub corpora: Vec<Corpus>,
+  /// admin-oriented view over the DB data
+  pub services: Vec<Service>,
+  /* admin-oriented view over the recorded actions
+   * pub actions: Vec<UserActionReport>, */
+}
+impl Default for DashboardContext {
+  fn default() -> Self {
+    DashboardContext {
+      global: HashMap::new(),
+      current_user: User::default(),
+      users: Vec::new(),
+      user_permissions: Vec::new(),
+      user_actions: Vec::new(),
+      daemons: Vec::new(),
+      corpora: Vec::new(),
+      services: Vec::new(),
+      // actions: Vec::new(),
     }
   }
 }

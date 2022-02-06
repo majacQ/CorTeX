@@ -1,104 +1,124 @@
-{% extends "layout" %} {% block content %}
-<h2>Add Corpus</h2>
-<form action="/add_corpus" method="get">
-  <table class="add-corpus">
-    <tr>
-      <td>Path: </td>
-      <td>
-        <input type="text" name="path">
-      </td>
-    </tr>
-    <tr>
-      <td>Setup:</td>
-      <td>
+{% extends "layout" %}
+{% block nav_extra %}
+<div class="alert alert-info message">
+  <span class="center align-middle" id="message">{{ global.message }}</span>
+</div>
+{% endblock nav_extra %}
+{% block content %}
+{% if current_user.admin %}
+<div id="accordion">
+  <div class="card">
+    <div class="card-header" id="headingCorpora">
+      <h3 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseCorpora" aria-expanded="false"
+          aria-controls="collapseCorpora">
+          Corpora
+        </button>
+      </h3>
+    </div>
+    <div id="collapseCorpora" class="collapse" aria-labelledby="headingCorpora" data-parent="#accordion">
+      <div class="card-body">
+        {% include "corpus-dashboard" %}
+      </div>
+    </div>
+  </div>
 
-        <input type="radio" name="setup" value="canonical" checked>Canonical
-        <br>
-        <input type="radio" name="setup" value="complex">arXiv</td>
-    </tr>
-    <tr>
-      <td colspan="2">
-        <input type="submit" value="Queue Corpus Import">
-      </td>
-    </tr>
-  </table>
-</form>
+  <div class="card">
+    <div class="card-header" id="headingServices">
+      <h3 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseServices" aria-expanded="false"
+          aria-controls="collapseServices">
+          Services
+        </button>
+      </h3>
+    </div>
+    <div id="collapseServices" class="collapse" aria-labelledby="headingServices" data-parent="#accordion">
+      <div class="card-body">
+        {% include "service-dashboard" %}
+      </div>
+    </div>
+  </div>
 
-<h2>System Report</h2>
-<h3>Frontend Server</h3>
-<table class="system-report">
-  <tr>
-    <td>OS</td>
-    <td>{{global.sys_os_type }}</td>
-  </tr>
-  <tr>
-    <td>Release</td>
-    <td>{{global.sys_os_release }}</td>
-  </tr>
-  <tr>
-    <td>CPU</td>
-    <td>{{global.sys_cpu }} cores</td>
-  </tr>
-  <tr>
-    <td>CPU Speed</td>
-    <td>{{global.sys_cpu_speed }} MHz</td>
-  </tr>
-  <tr>
-    <td>Total processes</td>
-    <td>{{global.sys_proc_total }}</td>
-  </tr>
-  <tr>
-    <td>Load 1</td>
-    <td>{{global.sys_load_one}}</td>
-  </tr>
-  <tr>
-    <td>Load 5</td>
-    <td>{{global.sys_load_five}}</td>
-  </tr>
-  <tr>
-    <td>Load 15</td>
-    <td>{{global.sys_load_fifteen}}</td>
-  </tr>
-  <tr>
-    <td>Memory total</td>
-    <td>{{global.sys_mem_total}}</td>
-  </tr>
-  <tr>
-    <td>Memory free</td>
-    <td>{{global.sys_mem_free}}</td>
-  </tr>
-  <tr>
-    <td>Memory available</td>
-    <td>{{global.sys_mem_avail}}</td>
-  </tr>
-  <tr>
-    <td>Memory buffers</td>
-    <td>{{global.sys_mem_buffers}}</td>
-  </tr>
-  <tr>
-    <td>Memory cached</td>
-    <td>{{global.sys_mem_cached}}</td>
-  </tr>
-  <tr>
-    <td>Swap total</td>
-    <td>{{global.sys_mem_swap_total}}</td>
-  </tr>
-  <tr>
-    <td>Swap free</td>
-    <td>{{global.sys_mem_swap_free}}</td>
-  </tr>
-  <tr>
-    <td>Disk total</td>
-    <td>{{global.sys_disk_total}}</td>
-  </tr>
-  <tr>
-    <td>Disk free</td>
-    <td>{{global.sys_disk_free}}</td>
-  </tr>
-  <tr>
-    <td>Hostname</td>
-    <td>{{global.sys_hostname}}</td>
-  </tr>
-</table>
+  <div class="card">
+    <div class="card-header" id="headingUsers">
+      <h3 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseUsers" aria-expanded="false"
+          aria-controls="collapseUsers">
+          Users
+        </button>
+      </h3>
+    </div>
+    <div id="collapseUsers" class="collapse" aria-labelledby="headingUsers" data-parent="#accordion">
+      <div class="card-body">
+        {% include "user-dashboard" %}
+      </div>
+    </div>
+  </div>
 
+  <div class="card">
+    <div class="card-header" id="headingServer">
+      <h5 class="mb-0">
+        <button class="btn btn-info" data-toggle="collapse" data-target="#collapseServer" aria-expanded="false"
+          aria-controls="collapseServer">
+          Server Report
+        </button>
+      </h5>
+    </div>
+    <div id="collapseServer" class="collapse" aria-labelledby="headingServer" data-parent="#accordion">
+      <div class="card-body">
+        {% include "server-reports" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% else %}
+<div class="center">
+  Currently this is an admin-only interface. If you want to request admin access, please contact the administrator of
+  the
+  CorTeX deployment with your email "{{current_user.email}}".</div>
+{% endif %}
+
+<script>
+  $("button[type='submit']").click(function (e) {
+    e.preventDefault();
+    $("body").css("cursor", "progress");
+    var form = $(this).closest("form");
+    var action = form.attr("action");
+    var urlParams = new URLSearchParams(window.location.search);
+    token = urlParams.get("token");
+    var action_with_params = action + "?token=" + token;
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', action_with_params);
+    xhr.setRequestHeader("Content-type", "application/json; charset=utf-8");
+    xhr.onreadystatechange = function () {
+      if (this.readyState == 4) { // Only process when done.
+        $("body").css("cursor", "default");
+        if (this.status != 200 && this.status != 202) {
+          // Something went wrong, throw out the localStorage and re-auth (Redis could've fallen, etc)
+          $("span#message").text('Failed, with status ' + this.status);
+        } else {
+          $("span#message").text('Action successfully started.');
+        }
+      }
+    };
+
+    var data = $(form).serializeArray().reduce(function (obj, item) {
+      obj[item.name] = item.value;
+      return obj;
+    }, {});;
+    if (data["complex"] == "true") {
+      data["complex"] = true;
+    } else {
+      data["complex"] = false;
+    }
+    xhr.send(JSON.stringify(data));
+    return false;
+  });
+</script>
 {% endblock content %}
+
+
+{% block footer_extra %}
+<div class="center text-danger arxmliv-kwarc-footer">Experimental interface, feedback is welcome at <a
+    href="https://github.com/dginev/CorTeX/issues/62">#62</a></div>
+{% endblock footer_extra %}
