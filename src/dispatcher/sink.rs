@@ -1,6 +1,3 @@
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::File;
@@ -14,10 +11,10 @@ use std::sync::Mutex;
 
 use time;
 
-use dispatcher::server;
-use helpers;
-use helpers::{TaskProgress, TaskReport, TaskStatus};
-use models::{Service, WorkerMetadata};
+use crate::dispatcher::server;
+use crate::helpers;
+use crate::helpers::{TaskProgress, TaskReport, TaskStatus};
+use crate::models::{Service, WorkerMetadata};
 
 /// Specifies the binding and operation parameters for a ZMQ sink component
 pub struct Sink {
@@ -44,7 +41,7 @@ impl Sink {
     progress_queue_arc: &Arc<Mutex<HashMap<i64, TaskProgress>>>,
     done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>,
     job_limit: Option<usize>,
-  ) -> Result<(), Box<Error>>
+  ) -> Result<(), Box<dyn Error>>
   {
     // Ok, let's bind to a port and start broadcasting
     let context = zmq::Context::new();
@@ -55,10 +52,10 @@ impl Sink {
     let mut sink_job_count: usize = 0;
 
     loop {
-      let mut recv_msg = zmq::Message::new()?;
-      let mut identity_msg = zmq::Message::new()?;
-      let mut taskid_msg = zmq::Message::new()?;
-      let mut service_msg = zmq::Message::new()?;
+      let mut recv_msg = zmq::Message::new();
+      let mut identity_msg = zmq::Message::new();
+      let mut taskid_msg = zmq::Message::new();
+      let mut service_msg = zmq::Message::new();
 
       sink.recv(&mut identity_msg, 0)?;
       let identity = match identity_msg.as_str() {

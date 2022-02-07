@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate cortex;
-// extern crate libxml;
-extern crate zmq;
-
 use cortex::backend::DEFAULT_DB_ADDRESS;
 use cortex::dispatcher::manager::TaskManager;
 
@@ -23,8 +19,7 @@ fn main() {
     message_size: 100_000,
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
   };
-  let job_limit = None;
   manager
-    .start(job_limit)
+    .start(None)
     .unwrap_or_else(|_| panic!("Failed to start TaskManager"));
 }

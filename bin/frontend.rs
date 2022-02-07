@@ -4,25 +4,10 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-
-#![feature(plugin)]
-#![feature(custom_derive)]
-#![plugin(rocket_codegen)]
-#![allow(
-  unknown_lints,
-  needless_pass_by_value,
-  let_unit_value,
-  print_literal
-)]
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate rocket;
-extern crate rocket_contrib;
-extern crate tokio_core;
-extern crate url;
-
+#![feature(proc_macro_hygiene, decl_macro)]
+#![allow(clippy::implicit_hasher, clippy::let_unit_value)]
 #[macro_use]
+  <<<<<<< loading-info-messages
 extern crate lazy_static;
 #[macro_use]
 extern crate serde_derive;
@@ -45,23 +30,33 @@ use rocket::response::{NamedFile, Redirect};
 use rocket_contrib::Template;
 
 use tokio_core::reactor::Core;
+  =======
+extern crate rocket;
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::Cursor;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::str;
-
-use redis::Commands;
-use regex::Regex;
 use std::thread;
-use std::time::Duration;
+
+use rocket::request::Form;
+use rocket::response::status::{Accepted, NotFound};
+use rocket::response::NamedFile;
+use rocket::Data;
+use rocket_contrib::json::Json;
+use rocket_contrib::templates::Template;
 
 use cortex::backend::Backend;
-use cortex::models::{Corpus, Service, Task};
+use cortex::frontend::cached::cache_worker;
+use cortex::frontend::concerns::{
+  serve_entry, serve_entry_preview, serve_report, serve_rerun, UNKNOWN,
+};
+use cortex::frontend::cors::CORS;
+use cortex::frontend::helpers::*;
+use cortex::frontend::params::{ReportParams, RerunRequestParams, TemplateContext};
+use cortex::models::{Corpus, HistoricalRun, RunMetadata, RunMetadataStack, Service};
 use cortex::sysinfo;
 
+  <<<<<<< loading-info-messages
 lazy_static! {
   static ref STRIP_NAME_REGEX: Regex = Regex::new(r"/[^/]+$").unwrap();
 }
@@ -165,6 +160,8 @@ struct ReportParams {
   page_size: Option<i64>,
 }
 
+  =======
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
 #[get("/")]
 fn root() -> Template {
   let mut context = TemplateContext::default();
@@ -182,17 +179,16 @@ fn root() -> Template {
   let corpora = backend
     .corpora()
     .iter()
-    .map(|c| c.to_hash())
+    .map(Corpus::to_hash)
     .collect::<Vec<_>>();
 
   context.global = global;
   context.corpora = Some(corpora);
-  aux_decorate_uri_encodings(&mut context);
+  decorate_uri_encodings(&mut context);
 
   Template::render("overview", context)
 }
 
-// Admin interface
 #[get("/admin")]
 fn admin() -> Template {
   let mut global = HashMap::new();
@@ -216,7 +212,7 @@ fn admin() -> Template {
 #[get("/workers/<service_name>")]
 fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
-  let service_name = aux_uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
+  let service_name = uri_unescape(Some(&service_name)).unwrap_or_else(|| UNKNOWN.to_string());
   if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
     let mut global = HashMap::new();
     global.insert(
@@ -244,7 +240,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
       .select_workers(&backend.connection)
       .unwrap()
       .into_iter()
-      .map(|w| w.into())
+      .map(Into::into)
       .collect();
     context.workers = Some(workers);
     Ok(Template::render("workers", context))
@@ -256,7 +252,7 @@ fn worker_report(service_name: String) -> Result<Template, NotFound<String>> {
 #[get("/corpus/<corpus_name>")]
 fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
   let backend = Backend::default();
-  let corpus_name = aux_uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
+  let corpus_name = uri_unescape(Some(&corpus_name)).unwrap_or_else(|| UNKNOWN.to_string());
   let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
   if let Ok(corpus) = corpus_result {
     let mut global = HashMap::new();
@@ -270,7 +266,7 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
         .to_string()
         + &corpus_name,
     );
-    global.insert("corpus_name".to_string(), corpus_name.to_string());
+    global.insert("corpus_name".to_string(), corpus_name);
     global.insert("corpus_description".to_string(), corpus.description.clone());
     let mut context = TemplateContext {
       global,
@@ -281,17 +277,17 @@ fn corpus(corpus_name: String) -> Result<Template, NotFound<String>> {
     if let Ok(backend_services) = services_result {
       let services = backend_services
         .iter()
-        .map(|s| s.to_hash())
+        .map(Service::to_hash)
         .collect::<Vec<_>>();
       let mut service_reports = Vec::new();
-      for mut service in services {
+      for service in services {
         // TODO: Report on the service status when we improve on the service report UX
         // service.insert("status".to_string(), "Running".to_string());
         service_reports.push(service);
       }
       context.services = Some(service_reports);
     }
-    aux_decorate_uri_encodings(&mut context);
+    decorate_uri_encodings(&mut context);
     return Ok(Template::render("services", context));
   }
   Err(NotFound(format!(
@@ -306,7 +302,7 @@ fn top_service_report(
   service_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(&corpus_name, &service_name, None, None, None, None)
+  serve_report(corpus_name, service_name, None, None, None, None)
 }
 #[get("/corpus/<corpus_name>/<service_name>/<severity>")]
 fn severity_service_report(
@@ -315,26 +311,19 @@ fn severity_service_report(
   severity: String,
 ) -> Result<Template, NotFound<String>>
 {
-  serve_report(
-    &corpus_name,
-    &service_name,
-    Some(severity),
-    None,
-    None,
-    None,
-  )
+  serve_report(corpus_name, service_name, Some(severity), None, None, None)
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>?<params..>")]
 fn severity_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     None,
     None,
@@ -350,26 +339,26 @@ fn category_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
     None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>?<params..>")]
 fn category_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
@@ -387,32 +376,84 @@ fn what_service_report(
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
     None,
   )
 }
-#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params>")]
+#[get("/corpus/<corpus_name>/<service_name>/<severity>/<category>/<what>?<params..>")]
 fn what_service_report_all(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
   what: String,
-  params: Option<ReportParams>,
+  params: Option<Form<ReportParams>>,
 ) -> Result<Template, NotFound<String>>
 {
   serve_report(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
     params,
   )
+}
+
+#[get("/history/<corpus_name>/<service_name>")]
+fn historical_runs(
+  corpus_name: String,
+  service_name: String,
+) -> Result<Template, NotFound<String>>
+{
+  let mut context = TemplateContext::default();
+  let mut global = HashMap::new();
+  let backend = Backend::default();
+  let corpus_name = corpus_name.to_lowercase();
+  if let Ok(corpus) = Corpus::find_by_name(&corpus_name, &backend.connection) {
+    if let Ok(service) = Service::find_by_name(&service_name, &backend.connection) {
+      if let Ok(runs) = HistoricalRun::find_by(&corpus, &service, &backend.connection) {
+        let runs_meta = runs
+          .into_iter()
+          .map(Into::into)
+          .collect::<Vec<RunMetadata>>();
+        let runs_meta_stack: Vec<RunMetadataStack> = RunMetadataStack::transform(&runs_meta);
+        context.history_serialized = Some(serde_json::to_string(&runs_meta_stack).unwrap());
+        global.insert(
+          "history_length".to_string(),
+          runs_meta
+            .iter()
+            .filter(|run| !run.end_time.is_empty())
+            .count()
+            .to_string(),
+        );
+        context.history = Some(runs_meta);
+      }
+    }
+  }
+
+  // Pass the globals(reports+metadata) onto the stash
+  global.insert(
+    "description".to_string(),
+    format!(
+      "Historical runs of service {} over corpus {}",
+      service_name, corpus_name
+    ),
+  );
+  global.insert("service_name".to_string(), service_name);
+  global.insert("corpus_name".to_string(), corpus_name);
+
+  context.global = global;
+  // And pass the handy lambdas
+  // And render the correct template
+  decorate_uri_encodings(&mut context);
+
+  // Report also the query times
+  Ok(Template::render("history", context))
 }
 
 #[get("/preview/<corpus_name>/<service_name>/<entry_name>")]
@@ -422,79 +463,17 @@ fn preview_entry(
   entry_name: String,
 ) -> Result<Template, NotFound<String>>
 {
-  let report_start = time::get_time();
-  let mut context = TemplateContext::default();
-  let mut global = HashMap::new();
-  let backend = Backend::default();
-
-  let corpus_result = Corpus::find_by_name(&corpus_name, &backend.connection);
-  if let Ok(corpus) = corpus_result {
-    let service_result = Service::find_by_name(&service_name, &backend.connection);
-    if let Ok(service) = service_result {
-      // Assemble the Download URL from where we will gather the page contents (after captcha is
-      // confirmed) First, we need the taskid
-      let task = Task::find_by_name(&entry_name, &corpus, &service, &backend.connection).unwrap();
-      let download_url = format!("/entry/{}/{}/", service_name, task.id.to_string());
-      global.insert("download_url".to_string(), download_url);
-
-      // Metadata for preview page
-      global.insert(
-        "title".to_string(),
-        "Corpus Report for ".to_string() + &corpus_name,
-      );
-      global.insert(
-        "description".to_string(),
-        "An analysis framework for corpora of TeX/LaTeX documents - statistical reports for "
-          .to_string()
-          + &corpus_name,
-      );
-      global.insert("corpus_name".to_string(), corpus_name.clone());
-      global.insert("corpus_description".to_string(), corpus.description.clone());
-      global.insert("service_name".to_string(), service_name.clone());
-      global.insert(
-        "service_description".to_string(),
-        service.description.clone(),
-      );
-      global.insert("type".to_string(), "Conversion".to_string());
-      global.insert("inputformat".to_string(), service.inputformat.clone());
-      global.insert("outputformat".to_string(), service.outputformat.clone());
-      match service.inputconverter {
-        Some(ref ic_service_name) => {
-          global.insert("inputconverter".to_string(), ic_service_name.clone())
-        },
-        None => global.insert("inputconverter".to_string(), "missing?".to_string()),
-      };
-      global.insert("report_time".to_string(), time::now().rfc822().to_string());
-    }
-    global.insert("severity".to_string(), entry_name.clone());
-    global.insert("entry_name".to_string(), entry_name.clone());
-  }
-
-  // Pass the globals(reports+metadata) onto the stash
-  context.global = global;
-  // And pass the handy lambdas
-  // And render the correct template
-  aux_decorate_uri_encodings(&mut context);
-
-  // Report also the query times
-  let report_end = time::get_time();
-  let report_duration = (report_end - report_start).num_milliseconds();
-  context
-    .global
-    .insert("report_duration".to_string(), report_duration.to_string());
-  Ok(Template::render("task-preview", context))
+  serve_entry_preview(corpus_name, service_name, entry_name)
 }
 
-// Note, the docs warn "data: Vec<u8>" is a DDoS vector - https://api.rocket.rs/rocket/data/trait.FromData.html
-// since this is a research-first implementation, i will abstain from doing this perfectly now and
-// run with the slurp.
 #[post("/entry/<service_name>/<entry_id>", data = "<data>")]
 fn entry_fetch(
   service_name: String,
   entry_id: usize,
-  data: Vec<u8>,
-) -> Result<NamedFile, Redirect>
+  data: Data,
+) -> Result<NamedFile, NotFound<String>>
 {
+  <<<<<<< loading-info-messages
   // Any secrets reside in config.json
   let cortex_config = aux_load_config();
 
@@ -576,6 +555,9 @@ fn entry_fetch(
   } else {
     NamedFile::open(&zip_path).map_err(|_| Redirect::to("/"))
   }
+  =======
+  serve_entry(service_name, entry_id, data)
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
 }
 
 //Expire captchas
@@ -591,63 +573,63 @@ fn expire_captcha() -> Result<Template, NotFound<String>> {
   Ok(Template::render("expire_captcha", context))
 }
 
-// Rerun queries
-#[post("/rerun/<corpus_name>/<service_name>", data = "<data>")]
+#[post(
+  "/rerun/<corpus_name>/<service_name>",
+  format = "application/json",
+  data = "<rr>"
+)]
 fn rerun_corpus(
   corpus_name: String,
   service_name: String,
-  data: Vec<u8>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(&corpus_name, &service_name, None, None, None, &data)
+  let corpus_name = corpus_name.to_lowercase();
+  serve_rerun(corpus_name, service_name, None, None, None, rr)
 }
 
 #[post(
   "/rerun/<corpus_name>/<service_name>/<severity>",
-  data = "<data>"
+  format = "application/json",
+  data = "<rr>"
 )]
 fn rerun_severity(
   corpus_name: String,
   service_name: String,
   severity: String,
-  data: Vec<u8>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
-  serve_rerun(
-    &corpus_name,
-    &service_name,
-    Some(severity),
-    None,
-    None,
-    &data,
-  )
+  serve_rerun(corpus_name, service_name, Some(severity), None, None, rr)
 }
 
 #[post(
   "/rerun/<corpus_name>/<service_name>/<severity>/<category>",
-  data = "<data>"
+  format = "application/json",
+  data = "<rr>"
 )]
 fn rerun_category(
   corpus_name: String,
   service_name: String,
   severity: String,
   category: String,
-  data: Vec<u8>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     None,
-    &data,
+    rr,
   )
 }
 
 #[post(
   "/rerun/<corpus_name>/<service_name>/<severity>/<category>/<what>",
-  data = "<data>"
+  format = "application/json",
+  data = "<rr>"
 )]
 fn rerun_what(
   corpus_name: String,
@@ -655,22 +637,28 @@ fn rerun_what(
   severity: String,
   category: String,
   what: String,
-  data: Vec<u8>,
+  rr: Json<RerunRequestParams>,
 ) -> Result<Accepted<String>, NotFound<String>>
 {
   serve_rerun(
-    &corpus_name,
-    &service_name,
+    corpus_name,
+    service_name,
     Some(severity),
     Some(category),
     Some(what),
-    &data,
+    rr,
   )
 }
 
 #[get("/favicon.ico")]
 fn favicon() -> Result<NamedFile, NotFound<String>> {
   let path = Path::new("public/").join("favicon.ico");
+  NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
+}
+
+#[get("/robots.txt")]
+fn robots() -> Result<NamedFile, NotFound<String>> {
+  let path = Path::new("public/").join("robots.txt");
   NamedFile::open(&path).map_err(|_| NotFound(format!("Bad path: {:?}", path)))
 }
 
@@ -689,6 +677,7 @@ fn rocket() -> rocket::Rocket {
         admin,
         corpus,
         favicon,
+        robots,
         files,
         worker_report,
         top_service_report,
@@ -704,18 +693,22 @@ fn rocket() -> rocket::Rocket {
         rerun_severity,
         rerun_category,
         rerun_what,
-        expire_captcha
+        expire_captcha,
+        historical_runs
       ],
-    ).attach(Template::fairing())
+    )
+    .attach(Template::fairing())
     .attach(CORS())
 }
 
 fn main() {
+  // cache worker in parallel to the main service thread
   let _ = thread::spawn(move || {
     cache_worker();
   });
   rocket().launch();
 }
+  <<<<<<< loading-info-messages
 
 fn serve_report(
   corpus_name: &str,
@@ -1381,3 +1374,5 @@ fn cache_worker() {
     thread::sleep(Duration::new(120, 0));
   }
 }
+  =======
+  >>>>>>> dependabot/cargo/sys-info-0.9.0

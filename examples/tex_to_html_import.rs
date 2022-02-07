@@ -6,16 +6,8 @@
 // except according to those terms.
 
 ///! Import a new corpus into `CorTeX` from the command line.
-///! Example run: `$ ./target/release/examples/tex_to_html_import /data/arxmliv/ arXMLiv`
-extern crate cortex;
-extern crate pericortex;
-
-// use std::collections::HashMap;
-// use std::path::Path;
-// use std::fs;
+///! Example run: `$ cargo run --release --example tex_to_html_import /data/arxmliv/ arXMLiv`
 use std::env;
-// use std::io::Read;
-// use std::io::Error;
 
 use cortex::backend::{Backend, DEFAULT_DB_ADDRESS};
 use cortex::dispatcher::manager::TaskManager;
@@ -69,16 +61,19 @@ fn main() {
   });
 
   // Start up an init worker
-  let worker = InitWorker {
+  let mut worker = InitWorker {
     service: "init".to_string(),
     version: 0.1,
     message_size: 100_000,
     source: "tcp://localhost:5757".to_string(),
     sink: "tcp://localhost:5758".to_string(),
     backend_address: DEFAULT_DB_ADDRESS.to_string(),
+    identity: "unknown:init:1".to_string(),
   };
   // Perform a single echo task
-  assert!(worker.start(Some(1)).is_ok());
+  if let Err(e) = worker.start(Some(1)) {
+    println!("InitWorker result: {:?}", e);
+  }
   // Wait for the final finisher to persist to DB
   thread::sleep(Duration::new(2, 0)); // TODO: Can this be deterministic? Join?
 
@@ -103,9 +98,7 @@ fn main() {
     },
   };
 
-  assert!(
-    backend
-      .register_service(&service_registered, &corpus_path)
-      .is_ok()
-  );
+  assert!(backend
+    .register_service(&service_registered, &corpus_path)
+    .is_ok());
 }

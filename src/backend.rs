@@ -5,32 +5,26 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! ORM-like capabilities for high- and mid-level operations on the Task store
-extern crate dotenv;
-extern crate rand;
+//! All aggregate operations over the CorTeX PostgresQL store are accessed through the connection of
+//! a `Backend` object.
 
-use std::collections::HashMap;
-// use std::thread;
+mod corpora_aggregate;
+mod mark;
+mod reports;
+mod services_aggregate;
+mod tasks_aggregate;
+pub(crate) use reports::progress_report;
+pub use reports::TaskReportOptions;
+
 use diesel::pg::PgConnection;
+use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;
-use regex::Regex;
-// use diesel::pg::upsert::*;
-use diesel::dsl::sql;
-use diesel::result::Error;
-use schema::{
-  corpora, log_errors, log_fatals, log_infos, log_invalids, log_warnings, services, tasks,
-};
+use std::collections::HashMap;
 
-// use data::{CortexORM, Corpus, Service, Task, TaskReport, TaskStatus};
-use concerns::{CortexDeletable, CortexInsertable};
-use helpers::{random_mark, TaskReport, TaskStatus};
-use models;
-use models::{
-  Corpus, LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, MarkRerun, NewTask,
-  Service, Task,
-};
-use reports::{AggregateReport, TaskDetailReport};
+use crate::concerns::{CortexDeletable, CortexInsertable};
+use crate::helpers::{TaskReport, TaskStatus};
+use crate::models::{Corpus, NewTask, Service, Task};
 
 lazy_static! {
   static ref ENTRY_NAME_REGEX: Regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
@@ -60,7 +54,6 @@ impl Default for Backend {
 pub fn connection_at(address: &str) -> PgConnection {
   PgConnection::establish(address).unwrap_or_else(|_| panic!("Error connecting to {}", address))
 }
-
 /// Constructs the default Backend struct for testing
 pub fn testdb() -> Backend {
   dotenv().ok();
@@ -68,7 +61,6 @@ pub fn testdb() -> Backend {
     connection: connection_at(TEST_DB_ADDRESS),
   }
 }
-
 /// Constructs a Backend at a given address
 pub fn from_address(address: &str) -> Backend {
   Backend {
@@ -76,82 +68,52 @@ pub fn from_address(address: &str) -> Backend {
   }
 }
 
+/// Options container for relevant fields in requesting a `(corpus, service)` rerun
+pub struct RerunOptions<'a> {
+  /// corpus to rerun
+  pub corpus: &'a Corpus,
+  /// service to rerun
+  pub service: &'a Service,
+  /// optionally, severity level filter
+  pub severity_opt: Option<String>,
+  /// optionally, category level filter
+  pub category_opt: Option<String>,
+  /// optionally, what level filter
+  pub what_opt: Option<String>,
+  /// optionally, owner of the rerun (default is "admin")
+  pub owner_opt: Option<String>,
+  /// optionally, description of the rerun (default is "rerun")
+  pub description_opt: Option<String>,
+}
+
 /// Instance methods
 impl Backend {
   /// Insert a vector of new `NewTask` tasks into the Task store
   /// For example, on import, or when a new service is activated on a corpus
   pub fn mark_imported(&self, imported_tasks: &[NewTask]) -> Result<usize, Error> {
-    // Insert, but only if the task is new (allow for extension calls with the same method)
-    insert_into(tasks::table)
-      .values(imported_tasks)
-      .on_conflict_do_nothing()
-      .execute(&self.connection)
+    mark::mark_imported(&self.connection, imported_tasks)
   }
-
   /// Insert a vector of `TaskReport` reports into the Task store, also marking their tasks as
   /// completed with the correct status code.
   pub fn mark_done(&self, reports: &[TaskReport]) -> Result<(), Error> {
-    use schema::tasks::{id, status};
-
-    try!(self.connection.transaction::<(), Error, _>(|| {
-      for report in reports.iter() {
-        // Update the status
-        try!(
-          update(tasks::table)
-            .filter(id.eq(report.task.id))
-            .set(status.eq(report.status.raw()))
-            .execute(&self.connection)
-        );
-        // Next, delete all previous log messages for this task.id
-        try!(
-          delete(log_infos::table)
-            .filter(log_infos::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_warnings::table)
-            .filter(log_warnings::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_errors::table)
-            .filter(log_errors::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_fatals::table)
-            .filter(log_fatals::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        try!(
-          delete(log_invalids::table)
-            .filter(log_invalids::task_id.eq(report.task.id))
-            .execute(&self.connection)
-        );
-        // Clean slate, so proceed to add the new messages
-        for message in &report.messages {
-          if message.severity() != "status" {
-            try!(message.create(&self.connection));
-          }
-        }
-        // TODO: Update dependenct services, when integrated in DB
-      }
-      Ok(())
-    }));
-    Ok(())
+    mark::mark_done(&self.connection, reports)
   }
-
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
   /// and `what` mark all matching tasks to be rerun
-  pub fn mark_rerun(
+  pub fn mark_rerun(&self, options: RerunOptions) -> Result<(), Error> {
+    mark::mark_rerun(&self.connection, options)
+  }
+
+  /// While not changing any status information for Tasks, add a new historical run bookmark
+  pub fn mark_new_run(
     &self,
     corpus: &Corpus,
     service: &Service,
-    severity_opt: Option<String>,
-    category_opt: Option<String>,
-    what_opt: Option<String>,
+    owner: String,
+    description: String,
   ) -> Result<(), Error>
   {
+  <<<<<<< loading-info-messages
     use schema::tasks::{corpus_id, service_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
     let mark: i32 = random_mark();
@@ -302,13 +264,21 @@ impl Backend {
     );
 
     Ok(())
+  =======
+    mark::mark_new_run(
+      &self.connection,
+      corpus,
+      service,
+      owner,
+      description,
+    )
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
   }
 
   /// Generic delete method, uses primary "id" field
   pub fn delete<Model: CortexDeletable>(&self, object: &Model) -> Result<usize, Error> {
     object.delete_by(&self.connection, "id")
   }
-
   /// Delete all entries matching the "field" value of a given object
   pub fn delete_by<Model: CortexDeletable>(
     &self,
@@ -318,7 +288,6 @@ impl Backend {
   {
     object.delete_by(&self.connection, field)
   }
-
   /// Generic addition method, attempting to insert in the DB a Task store datum
   /// applicable for any struct implementing the `CortexORM` trait
   /// (for example `Corpus`, `Service`, `Task`)
@@ -328,109 +297,42 @@ impl Backend {
 
   /// Fetches no more than `limit` queued tasks for a given `Service`
   pub fn fetch_tasks(&self, service: &Service, limit: usize) -> Result<Vec<Task>, Error> {
-    models::fetch_tasks(service, limit, &self.connection)
+    tasks_aggregate::fetch_tasks(&self.connection, service, limit)
   }
-
   /// Globally resets any "in progress" tasks back to "queued".
   /// Particularly useful for dispatcher restarts, when all "in progress" tasks need to be
   /// invalidated
   pub fn clear_limbo_tasks(&self) -> Result<usize, Error> {
-    models::clear_limbo_tasks(&self.connection)
+    tasks_aggregate::clear_limbo_tasks(&self.connection)
   }
 
   /// Activates an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this call will `RESET` the service into a mint
   /// state also removing any related log messages.
   pub fn register_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    use schema::tasks::dsl::*;
-    let corpus = try!(Corpus::find_by_path(corpus_path, &self.connection));
-    let todo_raw = TaskStatus::TODO.raw();
-
-    // First, delete existing tasks for this <service, corpus> pair.
-    try!(
-      delete(tasks)
-        .filter(service_id.eq(service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .execute(&self.connection)
-    );
-
-    // TODO: when we want to get completeness, also:
-    // - also erase log entries
-    // - update dependencies
-    let import_service = try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = try!(
-      tasks
-        .filter(service_id.eq(import_service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .select(entry)
-        .load(&self.connection)
-    );
-    try!(self.connection.transaction::<(), Error, _>(|| {
-      for imported_entry in entries {
-        let new_task = NewTask {
-          entry: imported_entry,
-          service_id: service.id,
-          corpus_id: corpus.id,
-          status: todo_raw,
-        };
-        new_task.create(&self.connection)?;
-      }
-      Ok(())
-    }));
-
-    Ok(())
+    services_aggregate::register_service(&self.connection, service, corpus_path)
   }
 
   /// Extends an existing service on a given corpus (via PATH)
   /// if the service has previously been registered, this call will ignore existing entries and
   /// simply add newly encountered ones
   pub fn extend_service(&self, service: &Service, corpus_path: &str) -> Result<(), Error> {
-    use schema::tasks::dsl::*;
-    let corpus = Corpus::find_by_path(corpus_path, &self.connection)?;
-    let todo_raw = TaskStatus::TODO.raw();
-
-    // TODO: when we want to get completeness, also:
-    // - update dependencies
-    let import_service = try!(Service::find_by_name("import", &self.connection));
-    let entries: Vec<String> = try!(
-      tasks
-        .filter(service_id.eq(import_service.id))
-        .filter(corpus_id.eq(corpus.id))
-        .select(entry)
-        .load(&self.connection)
-    );
-    try!(self.connection.transaction::<(), Error, _>(|| {
-      for imported_entry in entries {
-        let new_task = NewTask {
-          entry: imported_entry,
-          service_id: service.id,
-          corpus_id: corpus.id,
-          status: todo_raw,
-        };
-        new_task.create_if_new(&self.connection)?;
-      }
-      Ok(())
-    }));
-
-    Ok(())
+    services_aggregate::extend_service(&self.connection, service, corpus_path)
   }
 
   /// Deletes a service by name
   pub fn delete_service_by_name(&self, name: &str) -> Result<usize, Error> {
-    delete(services::table)
-      .filter(services::name.eq(name))
-      .execute(&self.connection)
+    services_aggregate::delete_service_by_name(&self.connection, name)
   }
 
   /// Returns a vector of currently available corpora in the Task store
-  pub fn corpora(&self) -> Vec<Corpus> {
-    corpora::table
-      .order(corpora::name.asc())
-      .load(&self.connection)
-      .unwrap_or_default()
-  }
+  pub fn corpora(&self) -> Vec<Corpus> { corpora_aggregate::list_corpora(&self.connection) }
 
   /// Returns a vector of tasks for a given Corpus, Service and status
+  pub fn tasks(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<Task> {
+    reports::list_tasks(&self.connection, corpus, service, task_status)
+  }
+  /// Returns a vector of task entry paths for a given Corpus, Service and status
   pub fn entries(
     &self,
     corpus: &Corpus,
@@ -438,6 +340,7 @@ impl Backend {
     task_status: &TaskStatus,
   ) -> Vec<String>
   {
+  <<<<<<< loading-info-messages
     use schema::tasks::dsl::{corpus_id, entry, service_id, status};
     let entries: Vec<String> = tasks::table
       .select(entry)
@@ -491,10 +394,14 @@ impl Backend {
     }
     Backend::aux_stats_compute_percentages(&mut stats_hash, None);
     stats_hash
+  =======
+    reports::list_entries(&self.connection, corpus, service, task_status)
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
   }
 
   /// Given a complex selector, of a `Corpus`, `Service`, and the optional `severity`, `category`
   /// and `what`, Provide a progress report at the chosen granularity
+  <<<<<<< loading-info-messages
   pub fn task_report(
     &self,
     corpus: &Corpus,
@@ -752,117 +659,13 @@ impl Backend {
       }
     }
     report
+  =======
+  pub fn task_report(&self, options: TaskReportOptions) -> Vec<HashMap<String, String>> {
+    reports::task_report(&self.connection, options)
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
   }
-
-  fn aux_stats_compute_percentages(
-    stats_hash: &mut HashMap<String, f64>,
-    total_given: Option<f64>,
-  )
-  {
-    // Compute percentages, now that we have a total
-    let total: f64 = 1.0_f64.max(match total_given {
-      None => {
-        let total_entry = stats_hash.get_mut("total").unwrap();
-        *total_entry
-      },
-      Some(total_num) => total_num,
-    });
-    let stats_keys = stats_hash
-      .iter()
-      .map(|(k, _)| k.clone())
-      .collect::<Vec<_>>();
-    for stats_key in stats_keys {
-      {
-        let key_percent_value: f64 =
-          100.0 * (*stats_hash.get_mut(&stats_key).unwrap() as f64 / total as f64);
-        let key_percent_rounded: f64 = (key_percent_value * 100.0).round() as f64 / 100.0;
-        let key_percent_name = stats_key + "_percent";
-        stats_hash.insert(key_percent_name, key_percent_rounded);
-      }
-    }
-  }
-
-  fn aux_task_rows_stats(
-    report_rows: &[AggregateReport],
-    mut total_valid_tasks: i64,
-    these_tasks: i64,
-    mut these_messages: i64,
-    these_silent: Option<i64>,
-  ) -> Vec<HashMap<String, String>>
-  {
-    let mut report = Vec::new();
-    // Guard against dividing by 0
-    if total_valid_tasks <= 0 {
-      total_valid_tasks = 1;
-    }
-    if these_messages <= 0 {
-      these_messages = 1;
-    }
-
-    for row in report_rows {
-      let stat_type: String = match row.report_name {
-        Some(ref name) => name.trim_right().to_string(),
-        None => String::new(),
-      };
-      if stat_type.is_empty() {
-        continue;
-      } // skip, empty
-      let stat_tasks: i64 = row.task_count;
-      let stat_messages: i64 = row.message_count;
-      let mut stats_hash: HashMap<String, String> = HashMap::new();
-      stats_hash.insert("name".to_string(), stat_type);
-      stats_hash.insert("tasks".to_string(), stat_tasks.to_string());
-      stats_hash.insert("messages".to_string(), stat_messages.to_string());
-
-      let tasks_percent_value: f64 = 100.0 * (stat_tasks as f64 / total_valid_tasks as f64);
-      let tasks_percent_rounded: f64 = (tasks_percent_value * 100.0).round() as f64 / 100.0;
-      stats_hash.insert(
-        "tasks_percent".to_string(),
-        tasks_percent_rounded.to_string(),
-      );
-      let messages_percent_value: f64 = 100.0 * (stat_messages as f64 / these_messages as f64);
-      let messages_percent_rounded: f64 = (messages_percent_value * 100.0).round() as f64 / 100.0;
-      stats_hash.insert(
-        "messages_percent".to_string(),
-        messages_percent_rounded.to_string(),
-      );
-
-      report.push(stats_hash);
-    }
-
-    let these_tasks_percent_value: f64 = 100.0 * (these_tasks as f64 / total_valid_tasks as f64);
-    let these_tasks_percent_rounded: f64 =
-      (these_tasks_percent_value * 100.0).round() as f64 / 100.0;
-    // Append the total to the end of the report:
-    let mut total_hash = HashMap::new();
-    total_hash.insert("name".to_string(), "total".to_string());
-    match these_silent {
-      None => {},
-      Some(silent_count) => {
-        let mut no_messages_hash: HashMap<String, String> = HashMap::new();
-        no_messages_hash.insert("name".to_string(), "no_messages".to_string());
-        no_messages_hash.insert("tasks".to_string(), silent_count.to_string());
-        let silent_tasks_percent_value: f64 =
-          100.0 * (silent_count as f64 / total_valid_tasks as f64);
-        let silent_tasks_percent_rounded: f64 =
-          (silent_tasks_percent_value * 100.0).round() as f64 / 100.0;
-        no_messages_hash.insert(
-          "tasks_percent".to_string(),
-          silent_tasks_percent_rounded.to_string(),
-        );
-        no_messages_hash.insert("messages".to_string(), "0".to_string());
-        no_messages_hash.insert("messages_percent".to_string(), "0".to_string());
-        report.push(no_messages_hash);
-      },
-    };
-    total_hash.insert("tasks".to_string(), these_tasks.to_string());
-    total_hash.insert(
-      "tasks_percent".to_string(),
-      these_tasks_percent_rounded.to_string(),
-    );
-    total_hash.insert("messages".to_string(), these_messages.to_string());
-    total_hash.insert("messages_percent".to_string(), "100".to_string());
-    report.push(total_hash);
-    report
+  /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
+  pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
+    reports::progress_report(&self.connection, corpus.id, service.id)
   }
 }

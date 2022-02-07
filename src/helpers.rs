@@ -17,8 +17,8 @@ use Archive::*;
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 
-use concerns::CortexInsertable;
-use models::{
+use crate::concerns::CortexInsertable;
+use crate::models::{
   LogError, LogFatal, LogInfo, LogInvalid, LogRecord, LogWarning, NewLogError, NewLogFatal,
   NewLogInfo, NewLogInvalid, NewLogWarning, Task,
 };
@@ -28,7 +28,12 @@ const BUFFER_SIZE: usize = 10_240;
 lazy_static! {
   static ref MESSAGE_LINE_REGEX: Regex =
     Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+  <<<<<<< loading-info-messages
   static ref LOADING_LINE_REGEX: Regex =
+  =======
+  /// "(Loading... file" message regex
+  pub static ref LOADING_LINE_REGEX: Regex =
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
     Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
@@ -96,7 +101,7 @@ pub enum TaskMessage {
 }
 impl LogRecord for TaskMessage {
   fn task_id(&self) -> i64 {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.task_id(),
       Warning(ref record) => record.task_id(),
@@ -106,7 +111,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn category(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.category(),
       Warning(ref record) => record.category(),
@@ -116,7 +121,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn what(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.what(),
       Warning(ref record) => record.what(),
@@ -126,7 +131,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn details(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.details(),
       Warning(ref record) => record.details(),
@@ -136,7 +141,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn set_details(&mut self, new_details: String) {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref mut record) => record.set_details(new_details),
       Warning(ref mut record) => record.set_details(new_details),
@@ -146,7 +151,7 @@ impl LogRecord for TaskMessage {
     }
   }
   fn severity(&self) -> &str {
-    use helpers::TaskMessage::*;
+    use crate::helpers::TaskMessage::*;
     match *self {
       Info(ref record) => record.severity(),
       Warning(ref record) => record.severity(),
@@ -181,7 +186,8 @@ impl TaskStatus {
       TaskStatus::Invalid => "invalid",
       TaskStatus::Blocked(_) => "blocked",
       TaskStatus::Queued(_) => "queued",
-    }.to_string()
+    }
+    .to_string()
   }
   /// Maps the enumeration into the Postgresql table name expected to hold messages for this
   /// status
@@ -192,7 +198,8 @@ impl TaskStatus {
       TaskStatus::Fatal => "log_fatals",
       TaskStatus::Invalid => "log_invalids",
       _ => "log_infos",
-    }.to_string()
+    }
+    .to_string()
   }
   /// Maps from the raw Task store value into the enumeration
   pub fn from_raw(num: i32) -> Self {
@@ -214,6 +221,10 @@ impl TaskStatus {
       "warning" => Some(TaskStatus::Warning),
       "error" => Some(TaskStatus::Error),
       "todo" => Some(TaskStatus::TODO),
+  <<<<<<< loading-info-messages
+  =======
+      "in_progress" => Some(TaskStatus::TODO),
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
       "invalid" => Some(TaskStatus::Invalid),
       "blocked" => Some(TaskStatus::Blocked(-6)),
       "queued" => Some(TaskStatus::Queued(1)),
@@ -233,9 +244,15 @@ impl TaskStatus {
       "blocked",
       "queued",
     ]
+  <<<<<<< loading-info-messages
       .iter()
       .map(|&x| x.to_string())
       .collect::<Vec<_>>()
+  =======
+    .iter()
+    .map(|&x| x.to_string())
+    .collect::<Vec<_>>()
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
   }
 }
 
@@ -256,7 +273,7 @@ pub enum NewTaskMessage {
 }
 impl LogRecord for NewTaskMessage {
   fn task_id(&self) -> i64 {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.task_id(),
       Warning(ref record) => record.task_id(),
@@ -266,7 +283,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn category(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.category(),
       Warning(ref record) => record.category(),
@@ -276,7 +293,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn what(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.what(),
       Warning(ref record) => record.what(),
@@ -286,7 +303,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn details(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.details(),
       Warning(ref record) => record.details(),
@@ -296,7 +313,7 @@ impl LogRecord for NewTaskMessage {
     }
   }
   fn set_details(&mut self, new_details: String) {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref mut record) => record.set_details(new_details),
       Warning(ref mut record) => record.set_details(new_details),
@@ -307,7 +324,7 @@ impl LogRecord for NewTaskMessage {
   }
 
   fn severity(&self) -> &str {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.severity(),
       Warning(ref record) => record.severity(),
@@ -319,7 +336,7 @@ impl LogRecord for NewTaskMessage {
 }
 impl CortexInsertable for NewTaskMessage {
   fn create(&self, connection: &PgConnection) -> Result<usize, Error> {
-    use helpers::NewTaskMessage::*;
+    use crate::helpers::NewTaskMessage::*;
     match *self {
       Info(ref record) => record.create(connection),
       Warning(ref record) => record.create(connection),
@@ -528,7 +545,15 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                     },
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
+  <<<<<<< loading-info-messages
                   status = TaskStatus::from_raw(cortex_scheme_status);
+  =======
+                  if status != TaskStatus::Invalid {
+                    // Invalid status is final, and derived, all others are set directly from the
+                    // log.
+                    status = TaskStatus::from_raw(cortex_scheme_status);
+                  }
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
                   skip_message = true; // do not record the status message
                 }
               },
@@ -560,7 +585,7 @@ pub fn prepare_input_stream(task: &Task) -> Result<File, io::Error> {
 }
 
 /// Utility functions, until they find a better place
-fn utf_truncate(input: &mut String, maxsize: usize) {
+pub fn utf_truncate(input: &mut String, maxsize: usize) {
   let mut utf_maxsize = input.len();
   if utf_maxsize >= maxsize {
     {
@@ -588,6 +613,6 @@ pub fn random_mark() -> i32 {
 /// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate
 pub fn rand_in_range(from: u16, to: u16) -> u16 {
   let mut rng = thread_rng();
-  let mark_rng: u16 = rng.gen_range(from, to);
+  let mark_rng: u16 = rng.gen_range(from..=to);
   mark_rng
 }

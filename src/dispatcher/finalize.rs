@@ -1,6 +1,6 @@
-use backend;
-use dispatcher::server;
-use helpers::TaskReport;
+use crate::backend;
+use crate::dispatcher::server;
+use crate::helpers::TaskReport;
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -17,7 +17,7 @@ pub struct Finalize {
 
 impl Finalize {
   /// Start the finalize loop, checking for new completed tasks every second
-  pub fn start(&self, done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>) -> Result<(), Box<Error>> {
+  pub fn start(&self, done_queue_arc: &Arc<Mutex<Vec<TaskReport>>>) -> Result<(), Box<dyn Error>> {
     let backend = backend::from_address(&self.backend_address);
     let mut jobs_count: usize = 0;
     // Persist every 1 second, if there is something to record
@@ -25,6 +25,9 @@ impl Finalize {
       if server::mark_done_arc(&backend, done_queue_arc)? {
         // we did some work, on to the next iteration
         jobs_count += 1;
+        if jobs_count % 100 == 0 {
+          println!("-- finalize thread persisted {} jobs.", jobs_count);
+        }
       } else {
         // If we have no reports to process, sleep for a second and recheck
         thread::sleep(Duration::new(1, 0));

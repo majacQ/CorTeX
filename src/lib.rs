@@ -14,19 +14,13 @@
 #![deny(missing_docs)]
 #![recursion_limit = "256"]
 #![feature(plugin)]
-extern crate Archive;
+#![allow(clippy::implicit_hasher)]
 #[macro_use]
 extern crate diesel;
 #[macro_use]
 extern crate dotenv_codegen;
-extern crate dotenv;
-extern crate glob;
-extern crate libxml;
-extern crate pericortex;
-extern crate rand;
-extern crate regex;
-extern crate sys_info;
 #[macro_use]
+  <<<<<<< loading-info-messages
 extern crate serde_derive;
 #[macro_use]
 extern crate lazy_static;
@@ -34,10 +28,16 @@ extern crate serde_json;
 extern crate tempfile;
 extern crate time;
 extern crate zmq;
+  =======
+extern crate lazy_static;
+#[macro_use]
+extern crate rocket;
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
 
 pub mod backend;
 pub mod concerns;
 pub mod dispatcher;
+pub mod frontend;
 pub mod helpers;
 pub mod importer;
 pub mod models;

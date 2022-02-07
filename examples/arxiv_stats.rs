@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate gnuplot;
-extern crate serde;
-extern crate serde_json;
-
 use serde::ser::Serialize;
 use std::collections::HashMap;
 use std::env;
@@ -22,8 +18,8 @@ use std::fs::DirEntry;
 use std::u64;
 
 // arXiv months in order
-// TODO: Only current as of 1505, you'll have to extend manually next time this is run
-static ORDERED_MONTHS: [&'static str; 304] = [
+// TODO: Only current as of 1808, you'll have to extend manually next time this is run
+static ORDERED_MONTHS: [&'static str; 326] = [
   "9107", "9108", "9109", "9110", "9111", "9112", "9201", "9202", "9203", "9204", "9205", "9206",
   "9207", "9208", "9209", "9210", "9211", "9212", "9301", "9302", "9303", "9304", "9305", "9306",
   "9307", "9308", "9309", "9310", "9311", "9312", "9401", "9402", "9403", "9404", "9405", "9406",
@@ -49,7 +45,9 @@ static ORDERED_MONTHS: [&'static str; 304] = [
   "1307", "1308", "1309", "1310", "1311", "1312", "1401", "1402", "1403", "1404", "1405", "1406",
   "1407", "1408", "1409", "1410", "1411", "1412", "1501", "1502", "1503", "1504", "1505", "1506",
   "1507", "1508", "1509", "1510", "1511", "1512", "1601", "1602", "1603", "1604", "1605", "1606",
-  "1607", "1608", "1609", "1610",
+  "1607", "1608", "1609", "1610", "1611", "1612", "1701", "1702", "1703", "1704", "1705", "1706",
+  "1707", "1708", "1709", "1710", "1711", "1712", "1801", "1802", "1803", "1804", "1805", "1806",
+  "1807", "1808",
 ];
 
 fn get_dir_size(direntry: &DirEntry) -> u64 {
@@ -102,8 +100,8 @@ fn write_stats<K: Hash + Eq + Serialize, V: Serialize>(
   counts: &HashMap<K, V>,
 ) -> std::io::Result<()>
 {
-  let mut f = try!(File::create(name));
-  try!(f.write_all(serde_json::to_string(&counts).unwrap().as_bytes()));
+  let mut f = File::create(name)?;
+  f.write_all(serde_json::to_string(&counts).unwrap().as_bytes())?;
   Ok(())
 }
 
@@ -111,8 +109,8 @@ fn main() {
   let args: Vec<_> = env::args().collect();
   let mut min_size = u64::MAX;
   let mut max_size = 0;
-  let mut max_path: String = "".to_string();
-  let mut min_path: String = "".to_string();
+  let mut max_path = String::new();
+  let mut min_path = String::new();
 
   let arxiv_root = &Path::new(&args[1]);
   let mut arxiv_size_frequencies: HashMap<u64, u64> = HashMap::new();
@@ -180,12 +178,10 @@ fn main() {
 
   // Plot of paper counts by month:
   let zero = 0 as u64;
-  let ordered_counts = ORDERED_MONTHS
-    .iter()
-    .map(|m| match arxiv_counts.get(&m.to_string()) {
-      Some(counts) => counts,
-      None => &zero,
-    });
+  let ordered_counts = ORDERED_MONTHS.iter().map(|m| match arxiv_counts.get(*m) {
+    Some(counts) => counts,
+    None => &zero,
+  });
   let ordered_month_xcoords = 1..ORDERED_MONTHS.len() + 1;
 
   let mut fg = Figure::new();
@@ -200,19 +196,19 @@ fn main() {
     .set_title("arXiv TeX submission counts", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_submission_counts.png");
-  fg.show();
+  fg.show().unwrap();
 
   // Plot of submission counts by month:
-  let ordered_sizes = ORDERED_MONTHS.iter().map(|m| {
-    match arxiv_monthly_sizes.get(&m.to_string()) {
+  let ordered_sizes = ORDERED_MONTHS
+    .iter()
+    .map(|m| match arxiv_monthly_sizes.get(*m) {
       Some(&counts) => counts,
       None => zero,
-    }
-  });
+    });
   fg = Figure::new();
   fg.axes2d()
     .points(
-      ordered_month_xcoords.clone(),
+      ordered_month_xcoords,
       ordered_sizes,
       &[PointSymbol('D'), Color("#ffaa77"), PointSize(0.5)],
     )
@@ -221,7 +217,7 @@ fn main() {
     .set_title("arXiv TeX submission sizes by month", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_submission_sizes.png");
-  fg.show();
+  fg.show().unwrap();
 
   // Plot average paper size in KB
   // Plot of submission size by month:
@@ -230,10 +226,7 @@ fn main() {
     .clone()
     .into_iter()
     .map(|entry| entry.0);
-  let freq_values = arxiv_size_frequencies
-    .clone()
-    .into_iter()
-    .map(|entry| entry.1);
+  let freq_values = arxiv_size_frequencies.into_iter().map(|entry| entry.1);
 
   fg = Figure::new();
   fg.axes2d()
@@ -247,5 +240,5 @@ fn main() {
     .set_title("arXiv TeX paper sizes", &[]);
 
   fg.set_terminal("pngcairo", "arxiv_paper_sizes.png");
-  fg.show();
+  fg.show().unwrap();
 }

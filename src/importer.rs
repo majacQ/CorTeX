@@ -6,18 +6,14 @@
 // except according to those terms.
 
 //! Import a new corpus into the framework
-
-extern crate Archive;
-extern crate glob;
-
 use glob::glob;
 // use regex::Regex;
-use backend::Backend;
-use helpers::TaskStatus;
-use models::{Corpus, NewCorpus, NewTask};
+use crate::backend::Backend;
+use crate::helpers::TaskStatus;
+use crate::models::{Corpus, NewCorpus, NewTask};
 use std::env;
+use std::error::Error;
 use std::fs;
-use std::io::Error;
 use std::path::Path;
 use std::path::PathBuf;
 use Archive::*;
@@ -59,21 +55,21 @@ impl Importer {
   /// Convenience method for (recklessly?) obtaining the current working dir
   pub fn cwd() -> PathBuf { env::current_dir().unwrap() }
   /// Top-level method for unpacking an arxiv-toplogy corpus from its tar-ed form
-  fn unpack(&self) -> Result<(), Error> {
-    try!(self.unpack_arxiv_top());
-    try!(self.unpack_arxiv_months());
+  fn unpack(&self) -> Result<(), Box<dyn Error>> {
+    self.unpack_arxiv_top()?;
+    self.unpack_arxiv_months()?;
     Ok(())
   }
-  fn unpack_extend(&self) -> Result<(), Error> {
-    try!(self.unpack_extend_arxiv_top());
+  fn unpack_extend(&self) -> Result<(), Box<dyn Error>> {
+    self.unpack_extend_arxiv_top()?;
     // We can reuse the monthly unpack, as it deletes all unpacked document archives
     // In other words, it always acts as a conservative extension
-    try!(self.unpack_arxiv_months());
+    self.unpack_arxiv_months()?;
     Ok(())
   }
 
   /// Unpack the top-level tar files from an arxiv-topology corpus
-  fn unpack_arxiv_top(&self) -> Result<(), Error> {
+  fn unpack_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting top-level unpack process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -122,7 +118,7 @@ impl Importer {
     Ok(())
   }
   /// Top-level extension unpacking for arxiv-topology corpora
-  fn unpack_extend_arxiv_top(&self) -> Result<(), Error> {
+  fn unpack_extend_arxiv_top(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting top-level unpack-extend process");
     let path_str = self.corpus.path.clone();
     let tars_path = path_str.to_string() + "/*.tar";
@@ -137,25 +133,30 @@ impl Importer {
             .open_filename(path.to_str().unwrap(), BUFFER_SIZE)
             .unwrap();
           while let Ok(e) = archive_reader.next_header() {
+            if e.pathname().ends_with(".pdf") {
+              continue;
+            }
             let full_extract_path = path_str.to_string() + &e.pathname();
             match fs::metadata(full_extract_path.clone()) {
-              Ok(_) => {}//println!("File {:?} exists, won't unpack.", e.pathname()),
+              Ok(_) => {}, //println!("File {:?} exists, won't unpack.", e.pathname()),
               Err(_) => {
-                // Archive entries end in .gz, let's try that as well, to check if the directory is there
+                // Archive entries end in .gz, let's try that as well, to check if the directory is
+                // there
                 let dir_extract_path = &full_extract_path[0..full_extract_path.len() - 3];
                 match fs::metadata(dir_extract_path) {
-                  Ok(_) => {}//println!("Directory for {:?} already exists, won't unpack.", e.pathname()),
+                  Ok(_) => {}, /* println!("Directory for {:?} already exists, won't unpack.",
+                                 * e.pathname()), */
                   Err(_) => {
                     // println!("To unpack: {:?}", full_extract_path);
                     match e.extract_to(&full_extract_path, Vec::new()) {
-                      Ok(_) => {}
+                      Ok(_) => {},
                       _ => {
                         println!("Failed to extract {:?}", full_extract_path);
-                      }
+                      },
                     }
-                  }
+                  },
                 }
-              }
+              },
             }
           }
         },
@@ -166,10 +167,10 @@ impl Importer {
   }
 
   /// Unpack the monthly sub-archives of an arxiv-topology corpus, into the CorTeX organization
-  fn unpack_arxiv_months(&self) -> Result<(), Error> {
+  fn unpack_arxiv_months(&self) -> Result<(), Box<dyn Error>> {
     println!("-- Starting to unpack monthly .gz archives");
     let path_str = self.corpus.path.clone();
-    let gzs_path = path_str.to_string() + "/*/*.gz";
+    let gzs_path = path_str + "/*/*.gz";
     for entry in glob(&gzs_path).unwrap() {
       match entry {
         Ok(path) => {
@@ -187,7 +188,8 @@ impl Importer {
           });
           // We'll write out a ZIP file for each entry
           let full_extract_path = entry_cp_dir.to_string() + "/" + base_name + ".zip";
-          let mut archive_writer_new = Writer::new().unwrap()
+          let mut archive_writer_new = Writer::new()
+            .unwrap()
             //.add_filter(ArchiveFilter::Lzip)
             // .set_compression(ArchiveFilter::None)
             .set_format(ArchiveFormat::Zip);
@@ -252,7 +254,7 @@ impl Importer {
   }
 
   /// Given a CorTeX-topology corpus, walk the file system and import it into the Task store
-  pub fn walk_import(&self) -> Result<(), Error> {
+  pub fn walk_import(&self) -> Result<usize, Box<dyn Error>> {
     println!("-- Starting import walk");
     let import_extension = if self.corpus.complex { "zip" } else { "tex" };
     let mut walk_q: Vec<PathBuf> = vec![Path::new(&self.corpus.path).to_owned()];
@@ -260,7 +262,7 @@ impl Importer {
     let mut import_counter = 0;
     while !walk_q.is_empty() {
       let current_path = walk_q.pop().unwrap();
-      let current_metadata = try!(fs::metadata(current_path.clone()));
+      let current_metadata = fs::metadata(current_path.clone())?;
       if current_metadata.is_dir() {
         println!("-- current path {:?}", current_path);
         // First, test if we just found an entry:
@@ -283,8 +285,8 @@ impl Importer {
           },
           Err(_) => {
             // No such entry found, traversing into the directory:
-            for subentry in try!(fs::read_dir(current_path.clone())) {
-              let subentry = try!(subentry);
+            for subentry in fs::read_dir(current_path.clone())? {
+              let subentry = subentry?;
               walk_q.push(subentry.path());
             }
           },
@@ -296,7 +298,7 @@ impl Importer {
       self.backend.mark_imported(&import_q).unwrap();
     } // TODO: Proper Error-handling
     println!("--- Imported {:?} entries.", import_counter);
-    Ok(())
+    Ok(import_counter)
   }
 
   /// Create a new NoProblem task for the "import" service and the Importer-specified corpus
@@ -317,28 +319,42 @@ impl Importer {
     }
   }
   /// Top-level import driver, performs an optional unpack, and then an import into the Task store
-  pub fn process(&self) -> Result<(), Error> {
+  pub fn process(&self) -> Result<(), Box<dyn Error>> {
     // println!("Greetings from the import processor");
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      try!(self.unpack());
+      self.unpack()?;
     }
     // Walk the directory tree and import the files in the Task store:
-    try!(self.walk_import());
+    self.walk_import()?;
 
     Ok(())
   }
 
   /// Top-level corpus extension, performs a check for newly added documents and extracts+adds
   /// them to the existing corpus tasks
-  pub fn extend_corpus(&self) -> Result<(), Error> {
+  pub fn extend_corpus(&self) -> Result<(), Box<dyn Error>> {
     if self.corpus.complex {
       // Complex setup has an unpack step:
-      try!(self.unpack_extend());
+      self.unpack_extend()?;
+    }
+    // Before we import, mark any current runs as completed.
+    for service in self
+      .corpus
+      .select_services(&self.backend.connection)
+      .unwrap_or_default()
+      .iter()
+    {
+      self.backend.mark_new_run(
+        &self.corpus,
+        service,
+        "cli-admin".to_string(), // command line interface only?
+        "extending corpus with more entries".to_string(),
+      )?;
     }
     // Use the regular walk_import, at the cost of more database work,
     // the "Backend::mark_imported" ORM method allows us to insert only if new
-    try!(self.walk_import());
+    self.walk_import()?;
     Ok(())
   }
 }

@@ -5,20 +5,17 @@
 // This file may not be copied, modified, or distributed
 // except according to those terms.
 
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::thread;
 
-use backend::DEFAULT_DB_ADDRESS;
-use dispatcher::finalize::Finalize;
-use dispatcher::sink::Sink;
-use dispatcher::ventilator::Ventilator;
-use helpers::{TaskProgress, TaskReport};
-use models::Service;
+use crate::backend::DEFAULT_DB_ADDRESS;
+use crate::dispatcher::finalize::Finalize;
+use crate::dispatcher::sink::Sink;
+use crate::dispatcher::ventilator::Ventilator;
+use crate::helpers::{TaskProgress, TaskReport};
+use crate::models::Service;
 use zmq::Error;
 
 /// Manager struct responsible for dispatching and receiving tasks
@@ -76,12 +73,14 @@ impl TaskManager {
         queue_size: source_queue_size,
         message_size: source_message_size,
         backend_address: source_backend_address.clone(),
-      }.start(
+      }
+      .start(
         &vent_services_arc,
         &vent_progress_queue_arc,
         &vent_done_queue_arc,
         job_limit,
-      ).unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
+      )
+      .unwrap_or_else(|e| panic!("Failed in ventilator thread: {:?}", e));
     });
 
     // Next prepare the finalize thread which will persist finished jobs to the DB
@@ -89,9 +88,10 @@ impl TaskManager {
     let finalize_done_queue_arc = done_queue_arc.clone();
     let finalize_thread = thread::spawn(move || {
       Finalize {
-        backend_address: finalize_backend_address.clone(),
+        backend_address: finalize_backend_address,
         job_limit,
-      }.start(&finalize_done_queue_arc)
+      }
+      .start(&finalize_done_queue_arc)
       .unwrap_or_else(|e| panic!("Failed in finalize thread: {:?}", e));
     });
 
@@ -101,22 +101,24 @@ impl TaskManager {
     let result_message_size = self.message_size;
     let result_backend_address = self.backend_address.clone();
 
-    let sink_services_arc = services_arc.clone();
-    let sink_progress_queue_arc = progress_queue_arc.clone();
+    let sink_services_arc = services_arc;
+    let sink_progress_queue_arc = progress_queue_arc;
 
-    let sink_done_queue_arc = done_queue_arc.clone();
+    let sink_done_queue_arc = done_queue_arc;
     let sink_thread = thread::spawn(move || {
       Sink {
         port: result_port,
         queue_size: result_queue_size,
         message_size: result_message_size,
         backend_address: result_backend_address.clone(),
-      }.start(
+      }
+      .start(
         &sink_services_arc,
         &sink_progress_queue_arc,
         &sink_done_queue_arc,
         job_limit,
-      ).unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
+      )
+      .unwrap_or_else(|e| panic!("Failed in sink thread: {:?}", e));
     });
 
     if vent_thread.join().is_err() {

@@ -4,10 +4,6 @@
 // Licensed under the MIT license <LICENSE-MIT or http://opensource.org/licenses/MIT>.
 // This file may not be copied, modified, or distributed
 // except according to those terms.
-extern crate cortex;
-extern crate diesel;
-extern crate pericortex;
-
 use cortex::backend;
 use cortex::backend::TEST_DB_ADDRESS;
 use cortex::dispatcher::manager::TaskManager;
@@ -35,7 +31,7 @@ fn mock_tex_to_html() {
   let latexmlc_path = str::from_utf8(&which_result).unwrap();
   if latexmlc_path.is_empty() {
     println!("latexmlc not installed, skipping test");
-    return assert!(true);
+    return;
   }
   // Initialize a corpus, import a single task, and enable a service on it
   let test_backend = backend::testdb();
@@ -98,14 +94,16 @@ fn mock_tex_to_html() {
   let manager_thread = thread::spawn(move || {
     let manager = TaskManager {
       backend_address: TEST_DB_ADDRESS.to_string(),
+      source_port: 52695,
+      result_port: 52696,
       ..TaskManager::default()
     };
     assert!(manager.start(job_limit).is_ok());
   });
   // Start up an tex to html worker
-  let worker = TexToHtmlWorker {
-    source: "tcp://localhost:51695".to_string(),
-    sink: "tcp://localhost:51696".to_string(),
+  let mut worker = TexToHtmlWorker {
+    source: "tcp://localhost:52695".to_string(),
+    sink: "tcp://localhost:52696".to_string(),
     ..TexToHtmlWorker::default()
   };
   // Perform a single echo task
@@ -118,6 +116,6 @@ fn mock_tex_to_html() {
   assert!(finished_task_result.is_ok());
   let finished_task = finished_task_result.unwrap();
   println!("Finished: {:?}", finished_task);
-  // This particular test finishes with an Error with the current LaTeXML (needs cmp.sty).
-  assert!(finished_task.status == TaskStatus::Error.raw())
+  // This particular test finishes with an Warning with the current LaTeXML 0.8.4 (needs cmp.sty).
+  assert!(finished_task.status == TaskStatus::Warning.raw())
 }

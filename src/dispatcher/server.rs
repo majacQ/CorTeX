@@ -1,16 +1,13 @@
-extern crate tempfile;
-extern crate zmq;
-
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::{Mutex};
 use std::thread;
 use std::time::Duration;
 use time;
 
-use backend::Backend;
-use helpers::{TaskProgress, TaskReport};
-use models::Service;
+use crate::backend::Backend;
+use crate::helpers::{TaskProgress, TaskReport};
+use crate::models::Service;
 
 /// Persists a shared vector of reports to the Task store
 pub fn mark_done_arc(
@@ -18,7 +15,14 @@ pub fn mark_done_arc(
   reports_arc: &Arc<Mutex<Vec<TaskReport>>>,
 ) -> Result<bool, String>
 {
-  let reports = drain_shared_vec(reports_arc);
+  // Important: hold the mutex lock for the entirety of the mark_done process,
+  // so that it gets poisoned if the DB runs away and the thread panics
+  // we want the entire dispatcher to panic if this thread panics.
+  let mut mutex_guard = reports_arc
+    .lock()
+    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in drain_shared_vec"));
+
+  let reports : Vec<TaskReport> = (*mutex_guard).drain(..).collect();
   if !reports.is_empty() {
     let request_time = time::get_time();
     let mut success = false;
@@ -129,15 +133,6 @@ pub fn push_progress_task<S: ::std::hash::BuildHasher>(
   progress_queue.insert(progress_task.task.id, progress_task);
 }
 
-/// Drain a `Vec` inside an `Arc<Mutex>`
-pub fn drain_shared_vec<T: Clone>(vec_arc: &Arc<Mutex<Vec<T>>>) -> Vec<T> {
-  let mut vec_mutex_guard = vec_arc
-    .lock()
-    .unwrap_or_else(|_| panic!("Failed to obtain Mutex lock in drain_shared_vec"));
-  let fetched_vec: Vec<T> = (*vec_mutex_guard).drain(..).collect();
-  fetched_vec
-}
-
 /// Memoized getter for a `Service` record from the backend
 pub fn get_sync_service<S: ::std::hash::BuildHasher>(
   service_name: &str,
@@ -155,7 +150,8 @@ pub fn get_sync_service<S: ::std::hash::BuildHasher>(
         Ok(s) => Some(s),
         _ => None,
       },
-    ).clone()
+    )
+    .clone()
 }
 
 /// Getter for a `Service` stored inside an `Arc<Mutex<HashMap>`, with no DB access
