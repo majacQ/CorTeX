@@ -47,6 +47,19 @@ gnuplot = "0.0.37"
 rocket = "0.4.0"
 rocket_codegen = "0.4.0"
 futures = "0.1"
+  <<<<<<< loading-info-messages
+hyper = "0.11"
+hyper-tls = "0.1"
+url="1.7"
+tokio-core = "0.1"
+zmq = "0.8.2"
+zmq-sys = "0.8.2"
+dotenv = "0.13"
+dotenv_codegen = "0.11"
+diesel = {version="=1.3.2", features = ["postgres"]}
+libxml = "0.2.2"
+lazy_static = "1.0.0"
+  =======
 hyper = "0.12"
 hyper-tls = "0.3"
 percent-encoding = "2.0.0"
@@ -59,3 +72,5 @@ chrono = "0.4.0"
 diesel = {version="1.4.1", features = ["postgres", "chrono"]}
 libxml = "0.2.6"
 lazy_static = "1.0.0"
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
+ 
