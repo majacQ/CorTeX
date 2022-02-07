@@ -1,7 +1,7 @@
 use diesel::pg::PgConnection;
 use diesel::result::Error;
 use diesel::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::concerns::CortexInsertable;
@@ -26,13 +26,21 @@ pub struct Corpus {
   /// a human-readable name for this corpus
   pub name: String,
   /// are we using multiple files to represent a document entry?
-  /// (if unsure, always use "true")
+  /// currently a "complex" setup is assumed in the arXiv organization,
+  /// and will be imported following the arXiv convention.
+  /// This can be revisited in the future.
   pub complex: bool,
   /// a human-readable description of the corpus, maybe allow markdown here?
   pub description: String,
+  /// the importable file extension for a canonically organized corpus directory
+  pub import_extension: String,
 }
 
 impl Corpus {
+  /// ORM-like until diesel has a best practice
+  pub fn find(corpus_id: i32, connection: &PgConnection) -> Result<Self, Error> {
+    corpora::table.find(corpus_id).get_result(connection)
+  }
   /// ORM-like until diesel.rs introduces finders for more fields
   pub fn find_by_name(name_query: &str, connection: &PgConnection) -> Result<Self, Error> {
     use crate::schema::corpora::name;
@@ -80,10 +88,15 @@ impl Corpus {
       .filter(corpora::id.eq(self.id))
       .execute(connection)
   }
+
+  /// Return all corpora in the database, ordered by name
+  pub fn all(connection: &PgConnection) -> Result<Vec<Corpus>, Error> {
+    corpora::table.order(corpora::name.asc()).load(connection)
+  }
 }
 
 /// Insertable `Corpus` struct
-#[derive(Insertable)]
+#[derive(Debug, Insertable, Serialize, Deserialize)]
 #[table_name = "corpora"]
 pub struct NewCorpus {
   /// file system path to corpus root
@@ -96,6 +109,8 @@ pub struct NewCorpus {
   pub complex: bool,
   /// frontend-facing description of the corpus, maybe allow markdown here?
   pub description: String,
+  /// the importable file extension for a canonically organized corpus directory
+  pub import_extension: String,
 }
 impl Default for NewCorpus {
   fn default() -> Self {
@@ -103,6 +118,7 @@ impl Default for NewCorpus {
       name: "mock corpus".to_string(),
       path: ".".to_string(),
       complex: true,
+      import_extension: "zip".to_owned(),
       description: String::new(),
     }
   }

@@ -28,8 +28,12 @@ const BUFFER_SIZE: usize = 10_240;
 lazy_static! {
   static ref MESSAGE_LINE_REGEX: Regex =
     Regex::new(r"^([^ :]+):([^ :]+):([^ ]+)(\s(.*))?$").unwrap();
+  <<<<<<< loading-info-messages
+  static ref LOADING_LINE_REGEX: Regex =
+  =======
   /// "(Loading... file" message regex
   pub static ref LOADING_LINE_REGEX: Regex =
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
     Regex::new(r"^\(Loading\s(.+/)?([^/]+[^.])\.\.\.(\s|$)").unwrap();
 }
 
@@ -217,7 +221,10 @@ impl TaskStatus {
       "warning" => Some(TaskStatus::Warning),
       "error" => Some(TaskStatus::Error),
       "todo" => Some(TaskStatus::TODO),
+  <<<<<<< loading-info-messages
+  =======
       "in_progress" => Some(TaskStatus::TODO),
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
       "invalid" => Some(TaskStatus::Invalid),
       "blocked" => Some(TaskStatus::Blocked(-6)),
       "queued" => Some(TaskStatus::Queued(1)),
@@ -237,9 +244,15 @@ impl TaskStatus {
       "blocked",
       "queued",
     ]
+  <<<<<<< loading-info-messages
+      .iter()
+      .map(|&x| x.to_string())
+      .collect::<Vec<_>>()
+  =======
     .iter()
     .map(|&x| x.to_string())
     .collect::<Vec<_>>()
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
   }
 }
 
@@ -532,11 +545,15 @@ pub fn generate_report(task: Task, result: &Path) -> TaskReport {
                     },
                   };
                   let cortex_scheme_status = -(latexml_scheme_status + 1);
+  <<<<<<< loading-info-messages
+                  status = TaskStatus::from_raw(cortex_scheme_status);
+  =======
                   if status != TaskStatus::Invalid {
                     // Invalid status is final, and derived, all others are set directly from the
                     // log.
                     status = TaskStatus::from_raw(cortex_scheme_status);
                   }
+  >>>>>>> dependabot/cargo/sys-info-0.9.0
                   skip_message = true; // do not record the status message
                 }
               },
@@ -596,6 +613,6 @@ pub fn random_mark() -> i32 {
 /// Helper for generating a random i32 in a range, to avoid loading the rng crate + boilerplate
 pub fn rand_in_range(from: u16, to: u16) -> u16 {
   let mut rng = thread_rng();
-  let mark_rng: u16 = rng.gen_range(from, to);
+  let mark_rng: u16 = rng.gen_range(from..=to);
   mark_rng
 }
