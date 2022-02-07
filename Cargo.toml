@@ -8,6 +8,7 @@ repository = "https://github.com/dginev/cortex"
 description = """
 A general purpose processing framework for corpora of scientific documents
 """
+default-run = "frontend"
 
 [lib]
 name = "cortex"
@@ -21,12 +22,20 @@ path = "bin/frontend.rs"
 name = "dispatcher"
 path = "bin/dispatcher.rs"
 
+[[bin]]
+name = "cache_worker"
+path = "bin/cache_worker.rs"
+
+[[bin]]
+name = "init_worker"
+path = "bin/init_worker.rs"
+
 [dependencies.libarchive-sys]
 git = "https://github.com/dginev/libarchive-sys.git"
 
 [dependencies.pericortex]
 git = "https://github.com/dginev/cortex-peripherals.git"
-version = "0.2.3"
+version = "0.2.4"
 
 [dependencies.rocket_contrib]
 version = "0.4.0"
@@ -37,12 +46,18 @@ features = ["json", "tera_templates"]
 regex = "1.0.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+  <<<<<<< dependabot/cargo/sys-info-0.9.0
 sys-info = "0.9.0"
+  =======
+# For now experimenting with both sysinfo and sys-info crates, should make a decision eventually...
+sys-info = "0.5.6"
+sysinfo = "0.10"
+  >>>>>>> dependabot/cargo/redis-0.20.0
 glob = "0.3.0"
 rand = "0.8.0"
 tempfile = "3"
 time = "0.1.4"
-redis = "0.19.0"
+redis = "0.20.0"
 gnuplot = "0.0.37"
 rocket = "0.4.0"
 rocket_codegen = "0.4.0"
@@ -68,9 +83,13 @@ zmq = "0.9.0"
 zmq-sys = "0.11.0"
 dotenv = "0.15.0"
 dotenv_codegen = "0.15"
-chrono = "0.4.0"
-diesel = {version="1.4.1", features = ["postgres", "chrono"]}
-libxml = "0.2.6"
+chrono = { version = "0.4", features = ["serde"] }
+diesel = {version="1.4", features = ["postgres", "chrono"]}
+libxml = "0.2.13"
 lazy_static = "1.0.0"
+  <<<<<<< dependabot/cargo/sys-info-0.9.0
   >>>>>>> dependabot/cargo/sys-info-0.9.0
  
+  =======
+google-signin = "0.3"
+  >>>>>>> dependabot/cargo/redis-0.20.0

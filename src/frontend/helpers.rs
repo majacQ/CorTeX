@@ -1,9 +1,23 @@
 //! General purpose auxiliary routines that do not fit the MVC web service paradigm,
 //! tending to minor tasks
-use crate::frontend::params::{FrontendConfig, TemplateContext};
-use serde_json;
+use crate::backend::Backend;
+use crate::frontend::params::{DashboardContext, FrontendConfig, TemplateContext};
+use crate::models::{DaemonProcess, User};
+use google_signin::IdInfo;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
+
+/// Provides default global fields for tera templates which may be needed at every page
+pub fn global_defaults() -> HashMap<String, String> {
+  let mut global = HashMap::new();
+  global.insert(
+    "google_oauth_id".to_owned(),
+    dotenv!("GOOGLE_OAUTH_ID").to_owned(),
+  );
+  // dotenv!("GOOGLE_OAUTH_SECRET");
+  global
+}
 
 /// Maps a cortex message severity into a bootstrap class for color highlight
 pub fn severity_highlight(severity: &str) -> &str {
@@ -159,5 +173,46 @@ pub fn load_config() -> FrontendConfig {
       "You need a well-formed JSON config.json file to run the frontend. Error: {}",
       e
     ),
+  }
+}
+
+/// Prepare the context for the admin dashboard
+pub fn dashboard_context(
+  backend: Backend,
+  current_user: Option<User>,
+  mut global: HashMap<String, String>,
+) -> DashboardContext
+{
+  if let Err(e) = crate::sysinfo::report(&mut global) {
+    println!("Sys report failed: {:?}", e);
+  }
+
+  DashboardContext {
+    global,
+    current_user: current_user.unwrap_or_default(),
+    daemons: DaemonProcess::all(&backend.connection).unwrap_or_default(),
+    corpora: backend.corpora(),
+    services: backend.services(),
+    // actions: UserActionReport::all(&backend.connection).unwrap_or_default(),
+    users: backend.users(),
+    ..DashboardContext::default()
+  }
+}
+
+/// Verify an OAuth token stands for an owned email
+pub fn verify_oauth(token: &str) -> Option<IdInfo> {
+  let oauth_registry = dotenv!("GOOGLE_OAUTH_ID").to_owned() + ".apps.googleusercontent.com";
+  let mut client = google_signin::Client::new();
+  client.audiences.push(oauth_registry); // required
+
+  if let Ok(id_info) = client.verify(token) {
+    if let Some(ref email) = id_info.email {
+      println!("Success! {:?} has signed in with google oauth", email);
+      Some(id_info)
+    } else {
+      None
+    }
+  } else {
+    None
   }
 }

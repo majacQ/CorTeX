@@ -3,8 +3,8 @@
   <h1>{{global.type}} results</h1>
   <br>
   <div class="row">
-    <div class="col-md-4"></div>
-    <div class="col-md-4" id="report-div">
+    <div class="col-4"></div>
+    <div class="col-4" id="report-div">
       <table id="corpus-report" class="table">
         <thead>
           <tr>
@@ -79,7 +79,7 @@
       </div>
   >>>>>>> dependabot/cargo/sys-info-0.9.0
     </div>
-    <div class="col-md-4"></div>
+    <div class="col-4"></div>
   </div>
 </div>
 <script src="/public/js/progress_report.js"></script> {% endblock content %}

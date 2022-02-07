@@ -8,11 +8,14 @@
 //! All aggregate operations over the CorTeX PostgresQL store are accessed through the connection of
 //! a `Backend` object.
 
-mod corpora_aggregate;
+mod cached;
 mod mark;
 mod reports;
 mod services_aggregate;
 mod tasks_aggregate;
+mod users_aggregate;
+pub use cached::cache_worker;
+pub use cached::task_report as cached_task_report;
 pub(crate) use reports::progress_report;
 pub use reports::TaskReportOptions;
 
@@ -21,10 +24,13 @@ use diesel::result::Error;
 use diesel::*;
 use dotenv::dotenv;
 use std::collections::HashMap;
+use std::process::{Child, Command};
+use std::time::SystemTime;
+use sysinfo::{System, SystemExt};
 
 use crate::concerns::{CortexDeletable, CortexInsertable};
 use crate::helpers::{TaskReport, TaskStatus};
-use crate::models::{Corpus, NewTask, Service, Task};
+use crate::models::{Corpus, DaemonProcess, NewDaemonProcess, NewTask, Service, Task, User};
 
 lazy_static! {
   static ref ENTRY_NAME_REGEX: Regex = Regex::new(r"^(.+)/[^/]+$").unwrap();
@@ -113,6 +119,7 @@ impl Backend {
     description: String,
   ) -> Result<(), Error>
   {
+  <<<<<<< dependabot/cargo/sys-info-0.9.0
   <<<<<<< loading-info-messages
     use schema::tasks::{corpus_id, service_id, status};
     // Rerun = set status to TODO for all tasks, deleting old logs
@@ -273,6 +280,9 @@ impl Backend {
       description,
     )
   >>>>>>> dependabot/cargo/sys-info-0.9.0
+  =======
+    mark::mark_new_run(&self.connection, corpus, service, owner, description)
+  >>>>>>> dependabot/cargo/redis-0.20.0
   }
 
   /// Generic delete method, uses primary "id" field
@@ -325,8 +335,15 @@ impl Backend {
     services_aggregate::delete_service_by_name(&self.connection, name)
   }
 
-  /// Returns a vector of currently available corpora in the Task store
-  pub fn corpora(&self) -> Vec<Corpus> { corpora_aggregate::list_corpora(&self.connection) }
+  /// Returns a vector of currently available corpora in the DB
+  pub fn corpora(&self) -> Vec<Corpus> { Corpus::all(&self.connection).unwrap_or_default() }
+
+  /// Returns a vector of currently available services in the DB
+  pub fn services(&self) -> Vec<Service> { Service::all(&self.connection).unwrap_or_default() }
+
+  /// Returns a vector of currently registered users
+  /// (currently we expect only few admin/dev users, so this should be a very fast query)
+  pub fn users(&self) -> Vec<User> { users_aggregate::list_users(&self.connection) }
 
   /// Returns a vector of tasks for a given Corpus, Service and status
   pub fn tasks(&self, corpus: &Corpus, service: &Service, task_status: &TaskStatus) -> Vec<Task> {
@@ -667,5 +684,71 @@ impl Backend {
   /// Provides a progress report, grouped by severity, for a given `Corpus` and `Service` pair
   pub fn progress_report(&self, corpus: &Corpus, service: &Service) -> HashMap<String, f64> {
     reports::progress_report(&self.connection, corpus.id, service.id)
+  }
+
+  /// Ensure a named daemon is running, or spin it up if not
+  pub fn ensure_daemon(&self, name: &str) -> Result<Option<Child>, Box<dyn std::error::Error>> {
+    // whitelist available daemons, not meant for general purpose calls..
+    if name != "cache_worker" && name != "dispatcher" && name != "init_worker" {
+      Err("only supported cortex binaries can be executed as daemons".into())
+    } else {
+      let mut is_running = false;
+      if let Ok(process_record) = DaemonProcess::find_by_name(name, &self.connection) {
+        // println!("Found record for {:?}: {:?}", name, process_record);
+        // we have a record, check if it is running with the OS
+        if let Some(_process) = System::new().get_process(process_record.pid) {
+          is_running = true;
+          process_record.touch(&self.connection)?;
+        // println!("Record pid {:?} is still alive!", process_record.pid);
+        } else {
+          // in the case the record is stale, remove it
+          // println!(
+          //   "Record pid {:?} is stale - removing from DB.",
+          //   process_record.pid
+          // );
+          process_record.destroy(&self.connection)?;
+        }
+      }
+      if is_running {
+        Ok(None) // already running, nothing to do
+      } else {
+        match Command::new("cargo").args(&["run", "--bin", name]).spawn() {
+          Ok(child) => {
+            let pid = child.id() as i32;
+            println!(
+              "Registering new {:?} record at freshly created process id {:?}",
+              name, pid
+            );
+            NewDaemonProcess {
+              name: name.to_owned(),
+              pid,
+              first_seen: SystemTime::now(),
+              last_seen: SystemTime::now(),
+            }
+            .create(&self.connection)?;
+            Ok(Some(child))
+          }, // register pid with lookup table
+          Err(e) => Err(e.into()),
+        }
+      }
+    }
+  }
+
+  /// When we start the cortex daemons ourselves, outside of the frontend logic,
+  /// one has to register them with the DB, so that the frontend is aware of them
+  pub fn override_daemon_record(&self, name: String, pid: u32) -> Result<usize, Error> {
+    // delete any existing record, then add the new one.
+    if let Ok(process_record) = DaemonProcess::find_by_name(&name, &self.connection) {
+      // we have a record, check if it is running with the OS
+      process_record.destroy(&self.connection)?;
+    }
+
+    NewDaemonProcess {
+      name,
+      pid: pid as i32,
+      first_seen: SystemTime::now(),
+      last_seen: SystemTime::now(),
+    }
+    .create(&self.connection)
   }
 }
